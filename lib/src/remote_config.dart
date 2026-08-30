@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'consentimiento.dart';
+import 'politica.dart';
+
 /// La configuración de Firebase que este comercio tiene asignada hoy.
 ///
 /// No viene de un archivo pegado en el proyecto: la sirve el servidor en cada
@@ -18,6 +21,8 @@ class AkPushConfig {
     required this.messagingSenderId,
     required this.version,
     this.comercio,
+    this.politica = PoliticaDeNotificaciones.comoEstabaAntes,
+    this.trajoPolitica = false,
   });
 
   final String projectId;
@@ -44,6 +49,17 @@ class AkPushConfig {
   /// no para decidir: quien manda es la llave.
   final String? comercio;
 
+  /// Lo que el comercio configuró sobre cuándo y cómo pedir el permiso.
+  ///
+  /// Si el servicio todavía no manda el campo, es la política de siempre: pedir
+  /// en el arranque, sin pregunta blanda. Nadie ve un cambio hasta que el
+  /// comercio configure algo.
+  final PoliticaDeNotificaciones politica;
+
+  /// Si la política vino del servidor o es la de siempre porque el campo todavía
+  /// no existe. Sirve para no pisar la que declaró la aplicación.
+  final bool trajoPolitica;
+
   factory AkPushConfig.fromJson(Map<String, dynamic> json) {
     final fb = (json['firebase'] as Map).cast<String, dynamic>();
     return AkPushConfig(
@@ -55,6 +71,12 @@ class AkPushConfig {
       // único que importa es comparar si cambió, no cuánto vale.
       version: '${json['version'] ?? ''}',
       comercio: json['comercio'] as String?,
+      trajoPolitica: json['politica'] is Map,
+      politica: PoliticaDeNotificaciones.fromJson(
+        json['politica'] is Map
+            ? (json['politica'] as Map).cast<String, dynamic>()
+            : null,
+      ),
     );
   }
 
@@ -70,6 +92,7 @@ class AkPushConfig {
         },
         'version': version,
         if (comercio != null) 'comercio': comercio,
+        'politica': politica.toJson(),
       };
 }
 
@@ -82,6 +105,9 @@ class ConfigStore {
   static const _claveConfig = 'akpush.config';
   static const _claveToken = 'akpush.token';
   static const _claveUsuario = 'akpush.userId';
+  static const _claveHuella = 'akpush.huella';
+  static const _clavePregunta = 'akpush.ultimaPregunta';
+  static const _claveConsentimiento = 'akpush.consentimiento';
 
   Future<AkPushConfig?> leer() async {
     final prefs = await SharedPreferences.getInstance();
@@ -113,9 +139,69 @@ class ConfigStore {
   Future<void> guardarUsuario(String userId) async =>
       (await SharedPreferences.getInstance()).setString(_claveUsuario, userId);
 
+  /// La huella del último registro. Ver [HuellaDelRegistro] en `sesion.dart`.
+  Future<Map<String, dynamic>?> leerHuella() async {
+    final crudo = (await SharedPreferences.getInstance()).getString(_claveHuella);
+    if (crudo == null) return null;
+    try {
+      return (jsonDecode(crudo) as Map).cast<String, dynamic>();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> guardarHuella(Map<String, dynamic> h) async =>
+      (await SharedPreferences.getInstance())
+          .setString(_claveHuella, jsonEncode(h));
+
+  /// Cuándo se le preguntó por última vez. Es lo que hace que a quien dijo
+  /// «ahora no» no se le vuelva a preguntar al día siguiente — que es cómo se
+  /// consigue una desinstalación.
+  Future<void> anotarQueSePregunto() async =>
+      (await SharedPreferences.getInstance())
+          .setString(_clavePregunta, DateTime.now().toIso8601String());
+
+  Future<bool> yaSePreguntoElPermiso() async =>
+      (await SharedPreferences.getInstance()).getString(_clavePregunta) != null;
+
+  /// Cuándo se le mostró la pregunta por última vez. Es lo que le permite al
+  /// comercio distinguir a quien dijo que no de quien nunca fue preguntado.
+  Future<DateTime?> cuandoSePregunto() async {
+    final crudo =
+        (await SharedPreferences.getInstance()).getString(_clavePregunta);
+    return crudo == null ? null : DateTime.tryParse(crudo);
+  }
+
+  Future<Duration?> desdeLaUltimaPregunta() async {
+    final crudo =
+        (await SharedPreferences.getInstance()).getString(_clavePregunta);
+    final cuando = crudo == null ? null : DateTime.tryParse(crudo);
+    return cuando == null ? null : DateTime.now().difference(cuando);
+  }
+
+  /// Qué se le preguntó a esta persona y qué contestó. Sobrevive al cierre de
+  /// sesión: el permiso es del TELÉFONO, no de quien entra.
+  Future<Consentimiento> leerConsentimiento() async {
+    final crudo =
+        (await SharedPreferences.getInstance()).getString(_claveConsentimiento);
+    if (crudo == null) return const Consentimiento();
+    try {
+      return Consentimiento.fromJson(
+          (jsonDecode(crudo) as Map).cast<String, dynamic>());
+    } catch (_) {
+      return const Consentimiento();
+    }
+  }
+
+  Future<void> guardarConsentimiento(Consentimiento c) async =>
+      (await SharedPreferences.getInstance())
+          .setString(_claveConsentimiento, jsonEncode(c.toJson()));
+
   Future<void> olvidarSesion() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_claveToken);
     await prefs.remove(_claveUsuario);
+    // La huella se va con la sesión: era de esa persona, no de este teléfono.
+    await prefs.remove(_claveHuella);
   }
 }

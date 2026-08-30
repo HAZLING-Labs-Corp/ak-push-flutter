@@ -17,18 +17,32 @@ class AkPushApi {
   AkPushApi({
     required this.apiKey,
     required this.baseUrl,
+    this.comercio,
     http.Client? cliente,
     this.timeout = const Duration(seconds: 10),
   }) : _cliente = cliente ?? http.Client();
 
   final String apiKey;
   final String baseUrl;
+
+  /// El comercio que la aplicación DICE ser.
+  ///
+  /// No es lo que da acceso —eso es la llave— y por eso no es secreto: puede
+  /// leerse dentro de la aplicación sin problema. Sirve para otra cosa, y es la
+  /// que importa: **si alguien pega la llave de otro comercio, la llamada falla
+  /// en el arranque** en vez de registrar a esta gente en la casa de al lado y
+  /// mandarle avisos a los clientes de otro.
+  ///
+  /// Es el mismo tipo de guarda que la validación del paquete en la
+  /// configuración: fallar fuerte y temprano en vez de andar callado y mal.
+  final String? comercio;
   final Duration timeout;
   final http.Client _cliente;
 
   Map<String, String> get _cabeceras => {
         'content-type': 'application/json',
         'authorization': 'Bearer $apiKey',
+        if (comercio != null) 'X-Comercio': comercio!,
       };
 
   /// Pide la configuración que le toca a esta aplicación.
@@ -56,6 +70,9 @@ class AkPushApi {
     String? identityHash,
     Map<String, dynamic>? deviceInfo,
     bool permisoConcedido = true,
+    String? estadoDelPermiso,
+    DateTime? sePreguntoEl,
+    Map<String, dynamic>? consentimiento,
   }) async {
     await _pedir(() => _cliente.post(
           Uri.parse('$baseUrl/api/v1/dispositivos'),
@@ -67,6 +84,23 @@ class AkPushApi {
             // El servicio filtra por esto antes de enviar: un dispositivo sin
             // permiso concedido no recibe intentos, y por lo tanto no se cobra.
             'permissionsGranted': permisoConcedido,
+            // 🔴 El booleano no alcanza, y ésta es la diferencia que el comercio
+            // necesita ver: «nunca se le preguntó» y «se le preguntó y dijo que
+            // no» son dos cosas distintas y piden acciones opuestas. A la
+            // primera hay que preguntarle; a la segunda, dejarla en paz o
+            // mandarla a los Ajustes.
+            //
+            // Y no se puede saber QUÉ contestó alguien a quien nunca se le
+            // mostró la pregunta — pero sí se puede saber **que se le mostró**,
+            // que es lo único que convierte el «no» en un número medible.
+            if (estadoDelPermiso != null) 'estadoDelPermiso': estadoDelPermiso,
+            if (sePreguntoEl != null)
+              'sePreguntoEl': sePreguntoEl.toUtc().toIso8601String(),
+            // El rastro de las DOS preguntas. `punto` es el resumen que la
+            // consola puede mostrar sin interpretar fechas: sin_preguntar,
+            // dijo_ahora_no, esperando_al_sistema, acepto,
+            // denego_en_el_sistema.
+            if (consentimiento != null) 'consentimiento': consentimiento,
             if (identity != null) 'identity': identity,
             if (identityHash != null) 'identityHash': identityHash,
             if (deviceInfo != null) 'deviceInfo': deviceInfo,

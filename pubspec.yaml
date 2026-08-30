@@ -28,6 +28,13 @@ dependencies:
 
   http: ^1.2.0
 
+  # La ÚNICA razón de esta dependencia es abrir los Ajustes del teléfono, que es
+  # lo único que queda cuando el diálogo del sistema ya no se muestra más.
+  # Firebase alcanza para leer y pedir el permiso —incluso para distinguir un
+  # «no» reversible de uno definitivo—, pero no tiene forma de abrir esa
+  # pantalla, y este paquete no tiene lado nativo propio donde escribirla.
+  permission_handler: ^12.0.3
+
   # Metadata del dispositivo que viaja con el alta. Es opcional por diseño:
   # si no se puede leer, el alta sigue igual.
   device_info_plus: ^10.1.2

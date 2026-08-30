@@ -44,12 +44,29 @@ class Presentador {
   /// segundo plano caen en un canal que no existe.
   static const String canalPorDefecto = 'default';
 
+  /// Canal gemelo del anterior, pero mudo.
+  ///
+  /// Hace falta un canal aparte porque en Android el sonido y la vibración son
+  /// propiedad del CANAL, no del aviso, y un canal ya creado **no se puede
+  /// cambiar**: el sistema ignora en silencio cualquier cambio de importancia o
+  /// de sonido posterior a su creación. Sin este segundo canal, pedir un aviso
+  /// sin ruido no haría nada y sonaría igual.
+  static const String canalSilencioso = 'silencioso';
+
   static const List<AndroidNotificationChannel> _canales = [
     AndroidNotificationChannel(
       canalPorDefecto,
       'Avisos',
       description: 'Avisos generales de la aplicación',
       importance: Importance.high,
+    ),
+    AndroidNotificationChannel(
+      canalSilencioso,
+      'Avisos sin sonido',
+      description: 'Avisos que la aplicación pidió mostrar sin ruido',
+      importance: Importance.low,
+      playSound: false,
+      enableVibration: false,
     ),
   ];
 
@@ -77,12 +94,22 @@ class Presentador {
 
   /// Dibuja el aviso. Si no trae ni título ni cuerpo no dibuja nada: un aviso
   /// vacío en la barra de estado es peor que ninguno.
-  Future<void> mostrar(PushMessage mensaje) async {
+  ///
+  /// Con [silencioso] el aviso se ve igual pero no suena ni vibra. Es para
+  /// cuando la persona ya está adentro de la aplicación: va a ver el aviso de
+  /// todos modos, y el ruido es lo único que sobra. El id del sistema no cambia
+  /// por esto, así que [retirar] sigue alcanzando también al aviso mudo.
+  Future<void> mostrar(PushMessage mensaje, {bool silencioso = false}) async {
     if (mensaje.title == null && mensaje.body == null) return;
 
     await iniciar();
 
-    final canal = mensaje.data['channelId'] ?? canalPorDefecto;
+    // Con `silencioso` manda el canal mudo y no el que pidió el mensaje: el
+    // `channelId` que viaja en `data` elige entre canales que suenan, y
+    // respetarlo acá haría sonar justamente al que se pidió callado.
+    final canal = silencioso
+        ? canalSilencioso
+        : (mensaje.data['channelId'] ?? canalPorDefecto);
     final definicion = _canales.firstWhere(
       (c) => c.id == canal,
       orElse: () => _canales.first,
@@ -93,10 +120,13 @@ class Presentador {
         definicion.id,
         definicion.name,
         channelDescription: definicion.description,
-        importance: Importance.high,
-        priority: Priority.high,
+        importance: silencioso ? Importance.low : Importance.high,
+        priority: silencioso ? Priority.low : Priority.high,
+        playSound: !silencioso,
+        enableVibration: !silencioso,
       ),
-      iOS: const DarwinNotificationDetails(),
+      // En iOS no hay canales: el silencio se pide aviso por aviso.
+      iOS: DarwinNotificationDetails(presentSound: !silencioso),
     );
 
     await _plugin.show(
