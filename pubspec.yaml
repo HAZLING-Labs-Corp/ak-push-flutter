@@ -1,0 +1,41 @@
+name: ak_push
+description: "Recibir notificaciones push con una llave y una línea. La cuenta de Google llega desde el servidor: no se pega ningún archivo de configuración."
+version: 0.1.0
+publish_to: 'none'
+repository: https://github.com/HAZLING-Labs-Corp/ak-push-flutter
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Transporte. `firebase_core` se inicializa con valores en tiempo de
+  # ejecución, no leyendo google-services.json: eso es lo que permite mover un
+  # comercio de una cuenta de Google a otra sin publicar una versión nueva.
+  firebase_core: ^4.10.0
+  firebase_messaging: ^16.3.0
+
+  # FCM no dibuja nada cuando la app está abierta (Android). El heads-up en
+  # primer plano lo dibuja este paquete, y es también el dueño de los canales.
+  flutter_local_notifications: ^22.0.1
+
+  # Caché de la configuración: sin ella, un primer arranque sin señal deja al
+  # teléfono sin registrar.
+  shared_preferences: ^2.5.4
+
+  http: ^1.2.0
+
+  # Metadata del dispositivo que viaja con el alta. Es opcional por diseño:
+  # si no se puede leer, el alta sigue igual.
+  device_info_plus: ^10.1.2
+  package_info_plus: ^8.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
