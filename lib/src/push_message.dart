@@ -30,3 +30,34 @@ class PushMessage {
   /// revisar algo». No trae contenido que mostrar.
   String? get signal => data['type'];
 }
+
+/// Lo que la aplicación puede reportar sobre un aviso.
+///
+/// Son cinco y no dos porque el servicio las distingue, y cada una contesta una
+/// pregunta distinta del negocio: `delivered` mide el transporte, `viewed` y
+/// `opened` miden si el mensaje sirvió, y `dismissed` mide si molestó.
+enum AccionDePush {
+  /// Llegó al teléfono. Hoy sólo se puede reportar con la app abierta.
+  delivered,
+
+  /// La persona lo vio en la barra, sin abrirlo.
+  viewed,
+
+  /// La persona lo tocó.
+  opened,
+
+  /// La persona lo descartó sin abrirlo.
+  dismissed,
+
+  /// Caducó antes de que hiciera nada con él.
+  expired;
+
+  /// El valor que espera el servicio, tal cual.
+  String get valor => switch (this) {
+        AccionDePush.delivered => 'DELIVERED',
+        AccionDePush.viewed => 'VIEWED',
+        AccionDePush.opened => 'OPENED',
+        AccionDePush.dismissed => 'DISMISSED',
+        AccionDePush.expired => 'EXPIRED',
+      };
+}

@@ -260,6 +260,10 @@ class AkPush {
       identity: identity,
       identityHash: identityHash,
       deviceInfo: datos.toJson(),
+      // El servicio filtra por esto antes de enviar. Reportar `true` cuando la
+      // persona dijo que no significa pagar envíos a un teléfono que no va a
+      // mostrar nada, e inflar la tasa de entrega con ellos.
+      permisoConcedido: _permisoConcedido,
     );
 
     _userId = userId;
@@ -289,6 +293,20 @@ class AkPush {
     _userId = null;
     await _almacen.olvidarSesion();
     await Presentador.instancia.retirarTodos();
+  }
+
+  /// Reporta una acción que sólo la aplicación puede saber.
+  ///
+  /// [AccionDePush.delivered] y [AccionDePush.opened] las reporta el paquete
+  /// solo. Las otras tres —vista, descartada, caducada— dependen de cómo esté
+  /// hecha la aplicación, así que las reporta quien la escribe.
+  static Future<void> reportar(
+    PushMessage mensaje,
+    AccionDePush accion,
+  ) async {
+    final id = mensaje.pushLogId;
+    if (id == null) return;
+    await _yo._api?.reportarEvento(pushLogId: id, accion: accion.valor);
   }
 
   // ── Lo que llega ────────────────────────────────────────────────────────
@@ -322,7 +340,7 @@ class AkPush {
     if (id != null) {
       await _api?.reportarEvento(
         pushLogId: id,
-        accion: 'DELIVERED',
+        accion: AccionDePush.delivered.valor,
         estadoApp: 'FOREGROUND',
       );
     }
@@ -344,7 +362,7 @@ class AkPush {
     if (log != null) {
       await _api?.reportarEvento(
         pushLogId: log,
-        accion: 'OPENED',
+        accion: AccionDePush.opened.valor,
         estadoApp: 'BACKGROUND',
       );
     }
@@ -368,6 +386,7 @@ class AkPush {
         token: nuevo,
         plataforma: datos.plataforma,
         deviceInfo: datos.toJson(),
+        permisoConcedido: _permisoConcedido,
       );
     } catch (_) {
       // Se reintenta en el próximo identify().

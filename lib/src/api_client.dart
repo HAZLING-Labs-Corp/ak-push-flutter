@@ -28,7 +28,7 @@ class AkPushApi {
 
   Map<String, String> get _cabeceras => {
         'content-type': 'application/json',
-        'x-akpush-key': apiKey,
+        'authorization': 'Bearer $apiKey',
       };
 
   /// Pide la configuración que le toca a esta aplicación.
@@ -40,11 +40,11 @@ class AkPushApi {
   /// y no le llegaría nada— sin ninguna excepción ni registro. Un 409 explícito
   /// es infinitamente más barato de diagnosticar que una aplicación muda.
   Future<AkPushConfig> obtenerConfig(String identificadorDePaquete) async {
-    final uri = Uri.parse('$baseUrl/v1/config')
-        .replace(queryParameters: {'packageName': identificadorDePaquete});
+    final uri = Uri.parse('$baseUrl/api/v1/configuracion')
+        .replace(queryParameters: {'paquete': identificadorDePaquete});
 
     final json = await _pedir(() => _cliente.get(uri, headers: _cabeceras));
-    return AkPushConfig.fromJson((json['data'] as Map).cast<String, dynamic>());
+    return AkPushConfig.fromJson(json);
   }
 
   /// Da de alta este dispositivo para esta persona.
@@ -55,14 +55,18 @@ class AkPushApi {
     String? identity,
     String? identityHash,
     Map<String, dynamic>? deviceInfo,
+    bool permisoConcedido = true,
   }) async {
     await _pedir(() => _cliente.post(
-          Uri.parse('$baseUrl/v1/devices'),
+          Uri.parse('$baseUrl/api/v1/dispositivos'),
           headers: _cabeceras,
           body: jsonEncode({
             'userId': userId,
             'token': token,
             'platform': plataforma,
+            // El servicio filtra por esto antes de enviar: un dispositivo sin
+            // permiso concedido no recibe intentos, y por lo tanto no se cobra.
+            'permissionsGranted': permisoConcedido,
             if (identity != null) 'identity': identity,
             if (identityHash != null) 'identityHash': identityHash,
             if (deviceInfo != null) 'deviceInfo': deviceInfo,
@@ -75,11 +79,14 @@ class AkPushApi {
   /// Es lo que evita que un teléfono que cambia de manos —vendido, prestado,
   /// compartido en familia— siga recibiendo los avisos de la persona anterior.
   Future<void> darDeBaja({required String userId, required String token}) async {
-    await _pedir(() => _cliente.delete(
-          Uri.parse('$baseUrl/v1/devices'),
-          headers: _cabeceras,
-          body: jsonEncode({'userId': userId, 'token': token}),
-        ));
+    // Los dos identificadores van en la ruta, así que hay que escaparlos: un
+    // token de FCM trae `:` y otros caracteres que sin escapar parten la ruta
+    // en pedazos y producen un 404 que no tiene nada que ver con la baja.
+    final uri = Uri.parse(
+      '$baseUrl/api/v1/dispositivos/'
+      '${Uri.encodeComponent(userId)}/${Uri.encodeComponent(token)}',
+    );
+    await _pedir(() => _cliente.delete(uri, headers: _cabeceras));
   }
 
   /// Reporta qué pasó con un aviso. Es «lo mejor que se pueda»: un fallo acá
@@ -91,11 +98,11 @@ class AkPushApi {
   }) async {
     try {
       await _pedir(() => _cliente.post(
-            Uri.parse('$baseUrl/v1/events'),
+            Uri.parse('$baseUrl/api/v1/interacciones'),
             headers: _cabeceras,
             body: jsonEncode({
               'pushLogId': pushLogId,
-              'action': accion,
+              'accion': accion,
               if (estadoApp != null) 'appState': estadoApp,
               'timestamp': DateTime.now().toUtc().toIso8601String(),
             }),
@@ -133,17 +140,26 @@ class AkPushApi {
       );
     }
 
-    if (respuesta.statusCode >= 200 && respuesta.statusCode < 300) {
+    if (respuesta.statusCode >= 200 && respuesta.statusCode < 300 &&
+        json['ok'] != false) {
       return json;
     }
 
-    final mensaje = json['error'] as String? ?? 'Error ${respuesta.statusCode}';
-    final detalle = json['details'] as String?;
+    // El servicio contesta `{ ok:false, error?, message }`: `error` sólo viene
+    // en los rechazos de credencial, y `message` siempre.
+    final mensaje = json['message'] as String? ??
+        json['error'] as String? ??
+        'Error ${respuesta.statusCode}';
+    final detalle = json['error'] as String?;
 
     final codigo = switch (respuesta.statusCode) {
       401 || 403 => AkPushErrorCode.unauthorized,
-      409 => AkPushErrorCode.appMismatch,
-      503 => AkPushErrorCode.serviceUnavailable,
+      // 404 en `/configuracion` significa que este paquete no está registrado en
+      // el comercio de esta llave, o que su configuración está incompleta del
+      // lado del proveedor. En los dos casos la app tiene que seguir con la que
+      // guardó, no arrancar contra un proyecto a medias.
+      404 => AkPushErrorCode.appMismatch,
+      502 || 503 => AkPushErrorCode.serviceUnavailable,
       _ => AkPushErrorCode.unknown,
     };
 

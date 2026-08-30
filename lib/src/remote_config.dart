@@ -17,6 +17,7 @@ class AkPushConfig {
     required this.apiKey,
     required this.messagingSenderId,
     required this.version,
+    this.comercio,
   });
 
   final String projectId;
@@ -39,6 +40,10 @@ class AkPushConfig {
         projectId: projectId,
       );
 
+  /// El comercio al que pertenece esta configuración. Sirve para diagnosticar,
+  /// no para decidir: quien manda es la llave.
+  final String? comercio;
+
   factory AkPushConfig.fromJson(Map<String, dynamic> json) {
     final fb = (json['firebase'] as Map).cast<String, dynamic>();
     return AkPushConfig(
@@ -46,10 +51,16 @@ class AkPushConfig {
       appId: fb['appId'] as String,
       apiKey: fb['apiKey'] as String,
       messagingSenderId: fb['messagingSenderId'] as String,
-      version: json['version'] as String? ?? '',
+      // El servicio la manda como número; acá se guarda como texto porque lo
+      // único que importa es comparar si cambió, no cuánto vale.
+      version: '${json['version'] ?? ''}',
+      comercio: json['comercio'] as String?,
     );
   }
 
+  /// Se guarda con la MISMA forma que devuelve el servicio, para que
+  /// [fromJson] sirva igual para lo que llega por la red y para lo que se leyó
+  /// del disco. Dos formas distintas serían dos maneras de romperse.
   Map<String, dynamic> toJson() => {
         'firebase': {
           'projectId': projectId,
@@ -58,6 +69,7 @@ class AkPushConfig {
           'messagingSenderId': messagingSenderId,
         },
         'version': version,
+        if (comercio != null) 'comercio': comercio,
       };
 }
 
