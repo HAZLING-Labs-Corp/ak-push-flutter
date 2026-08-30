@@ -14,6 +14,14 @@ enum AkPushErrorCode {
   /// No hubo respuesta: red, DNS o tiempo agotado. Transitorio.
   network,
 
+  /// El servicio contestó, pero esa ruta no existe.
+  ///
+  /// Casi siempre es la dirección mal configurada. Tiene código propio porque
+  /// el síntoma —un 404— es idéntico al de «este paquete no está registrado», y
+  /// confundirlos manda a revisar el registro del paquete cuando lo que hay que
+  /// mirar es la URL.
+  rutaNoEncontrada,
+
   /// El servicio contestó, pero no pudo servir la configuración.
   serviceUnavailable,
 

@@ -1,4 +1,5 @@
 import 'package:ak_push/ak_push.dart';
+import 'package:ak_push/src/api_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -61,6 +62,28 @@ void main() {
       expect(AccionDePush.opened.valor, 'OPENED');
       expect(AccionDePush.dismissed.valor, 'DISMISSED');
       expect(AccionDePush.expired.valor, 'EXPIRED');
+    });
+  });
+
+  group('la dirección se normaliza', () {
+    test('acepta la URL tal como la muestra la consola, con /api/v1', () {
+      // La consola le dice al comercio que la dirección es
+      // «http://…:3085/api/v1». Quien la siga al pie de la letra la pega
+      // completa, y sin normalizar la petición sale a /api/v1/api/v1/… — el
+      // servidor contesta su 404 genérico y el error no se parece en nada a
+      // «el prefijo está dos veces».
+      expect(AkPushApi.normalizarUrl('http://x:3085/api/v1'), 'http://x:3085');
+      expect(AkPushApi.normalizarUrl('http://x:3085/api/v1/'), 'http://x:3085');
+    });
+
+    test('y también sin él', () {
+      expect(AkPushApi.normalizarUrl('http://x:3085'), 'http://x:3085');
+      expect(AkPushApi.normalizarUrl('http://x:3085/'), 'http://x:3085');
+    });
+
+    test('no se come un /api/v1 que esté en el medio', () {
+      expect(AkPushApi.normalizarUrl('http://x/api/v1/proxy'),
+          'http://x/api/v1/proxy');
     });
   });
 }

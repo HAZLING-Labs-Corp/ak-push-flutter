@@ -64,20 +64,6 @@ class _PantallaState extends State<Pantalla> {
         comercio: _comercio,
         url: _url,
         pedirPermisoAlIniciar: false,
-        // Mientras el servicio no sirva el campo `politica`, la declara la app.
-        // Cuando lo sirva, gana la del servidor y esto queda de respaldo.
-        politicaPorDefecto: const PoliticaDeNotificaciones(
-          momento: MomentoDelPermiso.login,
-          preguntaBlanda: true,
-          reintentarCadaDias: 7,
-          textos: TextosDeLaPregunta(
-            titulo: '¿Te avisamos de tus cuotas?',
-            cuerpo: 'Te escribimos cuando venza una cuota, cuando se registre un '
-                'pago y si hay algo con tu cuenta. Nada más.',
-            aceptar: 'Sí, avísenme',
-            ahoraNo: 'Ahora no',
-          ),
-        ),
       );
       setState(() {
         _estado = 'listo';

@@ -22,7 +22,27 @@ class AkPushApi {
     this.timeout = const Duration(seconds: 10),
   }) : _cliente = cliente ?? http.Client();
 
+  /// Quita el `/api/v1` del final si vino, y las barras sueltas.
+  ///
+  /// La consola le muestra al comercio la dirección **con** el sufijo, así que
+  /// quien la siga al pie de la letra la va a pegar completa — y el paquete lo
+  /// agrega por su cuenta. Sin esto la petición sale a `/api/v1/api/v1/…`, el
+  /// servidor contesta su 404 genérico, y el error que ve quien integra no se
+  /// parece en nada a «el prefijo está dos veces».
+  static String normalizarUrl(String url) => url
+      .replaceAll(RegExp(r'/+$'), '')
+      .replaceAll(RegExp(r'/api/v1$'), '');
+
   final String apiKey;
+
+  /// La dirección del servicio, **sin** el `/api/v1` final: el paquete lo
+  /// agrega.
+  ///
+  /// Se acepta igual con el sufijo, porque la consola se lo muestra así al
+  /// comercio y quien la siga al pie de la letra lo va a pegar completo. Sin
+  /// esta normalización la petición sale a `/api/v1/api/v1/…`, el servidor
+  /// contesta su 404 genérico, y el error que ve quien integra no se parece en
+  /// nada a «la dirección tiene el prefijo dos veces».
   final String baseUrl;
 
   /// El comercio que la aplicación DICE ser.
@@ -188,11 +208,20 @@ class AkPushApi {
 
     final codigo = switch (respuesta.statusCode) {
       401 || 403 => AkPushErrorCode.unauthorized,
-      // 404 en `/configuracion` significa que este paquete no está registrado en
-      // el comercio de esta llave, o que su configuración está incompleta del
-      // lado del proveedor. En los dos casos la app tiene que seguir con la que
-      // guardó, no arrancar contra un proyecto a medias.
-      404 => AkPushErrorCode.appMismatch,
+      // 🔴 Hay DOS clases de 404 y confundirlas manda a buscar en el lugar
+      // equivocado.
+      //
+      // El del servicio —«este paquete no está registrado en tu comercio»—
+      // trae `ok:false` y un `message` que lo explica: ése sí es appMismatch.
+      //
+      // El OTRO es el 404 genérico del servidor cuando la ruta no existe, y
+      // casi siempre significa que la dirección está mal configurada. Decirle a
+      // quien integra que «la app no coincide con la registrada» cuando lo que
+      // pasa es que la URL tiene el prefijo dos veces le hace revisar el
+      // registro del paquete durante una hora.
+      404 => json['ok'] == false
+          ? AkPushErrorCode.appMismatch
+          : AkPushErrorCode.rutaNoEncontrada,
       502 || 503 => AkPushErrorCode.serviceUnavailable,
       _ => AkPushErrorCode.unknown,
     };

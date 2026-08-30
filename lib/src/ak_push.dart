@@ -292,8 +292,8 @@ class AkPush {
       _api = AkPushApi(
         apiKey: apiKey,
         comercio: comercio,
-        baseUrl: (baseUrl ?? 'https://api-push.creditotal.online')
-            .replaceAll(RegExp(r'/+$'), ''),
+        baseUrl: AkPushApi.normalizarUrl(
+            baseUrl ?? 'https://api-push.creditotal.online'),
       );
 
       _consentimiento = await _almacen.leerConsentimiento();
