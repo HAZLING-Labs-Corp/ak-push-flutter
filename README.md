@@ -10,10 +10,18 @@ dependencies:
 ```dart
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AkPush.init(apiKey: 'akp_...');   // la llave que te dimos
+  await AkPush.init(
+    llave:    'pk_live_…',              // la llave con alcance devices:write
+    comercio: 'acme',                   // tu identificador de comercio
+    url:      'https://…/api/v1',
+  );
   runApp(const MiApp());
 }
 ```
+
+Los tres valores son los mismos que te muestra la consola. **La llave es lo único
+secreto de los tres** — el comercio no da acceso: sirve para que una llave mal
+pegada falle en el arranque en vez de mandarle avisos a los clientes de otro.
 
 ⚠️ Así como está, `init()` le pide el permiso de notificaciones a la persona en
 el arranque. **Casi siempre conviene lo contrario.** Antes de publicar, leé
@@ -22,20 +30,122 @@ el arranque. **Casi siempre conviene lo contrario.** Antes de publicar, leé
 Cuando la persona inicia sesión:
 
 ```dart
-await AkPush.identify(userId: 'u_123');
+final r = await AkPush.alIniciarSesion(userId: 'u_123');
+
+if (!r.puedeRecibir) {
+  // r.motivo dice por qué, y r.accionSugerida qué hacer al respecto
+}
 ```
 
 ⚠️ `init()` es asíncrono. No ofrezcas el botón de inicio de sesión hasta que
-resuelva, o `identify()` va a fallar con `notInitialized`.
+resuelva, o vas a recibir `notInitialized`.
 
 Cuando cierra sesión:
 
 ```dart
-await AkPush.logout();
+await AkPush.alCerrarSesion();
 ```
 
 Eso es todo. **No pegás ningún archivo de configuración en el proyecto.** La cuenta
 de Google la sirve nuestro servidor en cada arranque.
+
+---
+
+## Iniciar sesión hace más que registrar
+
+`alIniciarSesion()` es la puerta por la que el teléfono queda en orden para esa
+persona. Adentro, en este orden:
+
+1. **Si había otra persona en este teléfono, la da de baja.** Antes de tocar nada
+   más: si el registro nuevo falla a mitad, el teléfono queda sin dueño y no con
+   el anterior, que seguiría recibiendo lo suyo.
+2. **Le pregunta al sistema operativo por el permiso.** No confía en lo que tenía
+   guardado: la persona pudo haberlo apagado desde los Ajustes hace seis meses y
+   nada te avisó.
+3. **Decide qué hacer** según lo que configuró tu comercio.
+4. **Registra sólo si algo cambió.**
+
+Y te devuelve el resumen:
+
+```dart
+r.puedeRecibir        // ¿le va a llegar o no? — casi siempre alcanza con esto
+r.estadoDelPermiso    // los cinco estados
+r.accionSugerida      // qué te toca hacer AHORA
+r.huboCambioDePersona // había otra y se le dio de baja
+r.motivo              // la frase que explica por qué no puede recibir
+```
+
+`r.motivo` es para tu registro o para un ticket. **No para mostrárselo a la
+persona**: eso lo escribís vos, con tu voz.
+
+---
+
+## Lo que configura tu comercio, sin que publiques nada
+
+Cuándo pedir el permiso no lo decide tu código: lo decide tu comercio desde la
+consola, y viaja con la configuración.
+
+```dart
+AkPush.politica.momento             // arranque · login · laAppDecide
+AkPush.politica.obligatorio         // lo considera indispensable
+AkPush.politica.preguntaBlanda      // si mostrás tu pantalla antes
+AkPush.politica.reintentarCadaDias
+AkPush.politica.textos              // titulo · cuerpo · aceptar · ahoraNo
+```
+
+Los textos son de tu comercio y hablan con su voz — por eso viajan, en vez de
+estar escritos en el paquete.
+
+> **«Obligatorio» no puede significar lo que suena.** Ningún SDK puede forzar a
+> nadie a aceptar notificaciones: el diálogo es del sistema operativo y la
+> respuesta es de la persona. Significa que tu comercio lo considera
+> indispensable, para que tu app insista. Qué hacés con esa señal es tuyo.
+
+Mientras el servicio no sirva la política, podés declararla vos:
+
+```dart
+await AkPush.init(
+  llave: '…', comercio: '…',
+  politicaPorDefecto: const PoliticaDeNotificaciones(
+    momento: MomentoDelPermiso.login,
+    preguntaBlanda: true,
+  ),
+);
+```
+
+Cuando el servicio la mande, gana la del servidor.
+
+---
+
+## Marcá lo que contestó en tu modal
+
+Si mostrás la pregunta blanda, avisale al SDK qué contestó — **en los dos casos,
+no sólo cuando acepta**:
+
+```dart
+final si = await mostrarMiPantalla();
+await AkPush.reportarModal(acepto: si);
+if (si) await AkPush.pedirPermiso();
+```
+
+Un «ahora no» también es un dato, y es el que distingue a quien se puede
+recuperar de quien ya dijo que no de verdad.
+
+### Por qué importa: son dos preguntas, no una
+
+| | quién la levanta | si dice que no |
+|---|---|---|
+| tu modal | **tu app** | no cuesta nada · se le vuelve a preguntar |
+| el diálogo | **el sistema operativo** | en iPhone, definitivo |
+
+Alguien puede decir **que sí al tuyo y que no al del sistema**. Sin marcarlo, esa
+persona queda igual que quien nunca vio nada — siendo situaciones opuestas.
+
+```dart
+AkPush.consentimiento.punto
+// sin_preguntar · dijo_ahora_no · esperando_al_sistema
+// acepto · denego_en_el_sistema
+```
 
 ---
 
@@ -151,7 +261,10 @@ Al arrancar, no pidas nada. `init()` solo lee lo que ya haya:
 ```dart
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AkPush.init(apiKey: 'akp_...', pedirPermisoAlIniciar: false);
+  await AkPush.init(
+    llave: 'pk_live_…', comercio: 'acme',
+    pedirPermisoAlIniciar: false,
+  );
   runApp(const MiApp());
 }
 ```
@@ -552,25 +665,20 @@ y dejá que `AkPush.init()` la haga.
 
 ## Estado
 
-Versión `0.1.0`, en prueba de concepto. Android probado; iOS necesita todavía la
-verificación en un teléfono real.
+Versión `0.1.0`, en prueba de concepto. Android probado de punta a punta contra
+un servicio real; iOS todavía no.
 
-**Lo que ya hace:**
+**Lo que hace hoy:** configuración servida por el servidor, permiso diferido con
+pregunta blanda, el ciclo de sesión completo, el rastro del consentimiento, los
+tres caminos de llegada, el control del dibujo, el ruteo del toque, el
+diagnóstico, y la baja al cerrar sesión.
 
-- Recibir, dibujar en primer plano y medir entrega y apertura.
-- Pedir el permiso **cuando tu app decide**, y distinguir un «no» reversible de
-  uno definitivo, que es lo que permite volver a ofrecer sin quemar el diálogo.
-- Decir por qué no llegan los push, con `diagnostico()`.
-- Dejar que tu app decida si el aviso se dibuja, sin que eso ensucie los números.
-- Llevar el toque a la pantalla correcta con lo que manda tu backend.
+**Lo que todavía no:**
 
-**Lo que sigue faltando:**
-
-- Los avisos que llegan con la app en **segundo plano** se ven y se pueden tocar,
-  pero su *entrega* no se cuenta. Solo se cuenta la apertura. Medirlo exigiría
-  credenciales propias dentro del aislado de segundo plano; queda pendiente.
-- iOS sin verificar en un teléfono real.
-- `identityHash` viaja pero el servidor todavía no lo verifica. El parámetro
-  existe desde la primera versión para que activarlo después no rompa a nadie.
-- Las acciones `viewed`, `dismissed` y `expired` las tenés que reportar vos: solo
-  tu app sabe cuándo pasan.
+| | |
+|---|---|
+| **La entrega en segundo plano no se cuenta** | Los avisos que llegan con tu app cerrada se ven y se pueden tocar, pero su *entrega* no entra en las estadísticas. Sólo la apertura. Medirla exige credenciales propias dentro del aislado de segundo plano |
+| **Preferencias por categoría** | Que la persona elija recibir unos avisos y otros no. Espera al servicio |
+| **La bandeja** | Ver dentro de la app lo que llegó. Espera al servicio |
+| **iOS** | Necesita Mac, teléfono físico y la clave de APNs del comercio |
+| **Idempotencia** | El paquete de envío manda la clave; el servicio todavía no la hace cumplir |
