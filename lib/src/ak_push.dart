@@ -980,6 +980,27 @@ class AkPush {
 
     var seRegistro = false;
 
+    // 🔴 LA HUELLA ES LA CONSTANCIA DE QUE EL SERVIDOR YA LO TIENE.
+    //
+    // `_registrado` vive en memoria y arranca en `false` en cada apertura de la
+    // aplicación; la huella vive en disco y sobrevive. Al segundo arranque el plan dice
+    // «no hace falta registrar, no cambió nada» —que es correcto y ahorra una llamada—
+    // pero nadie levantaba la bandera, y entonces:
+    //
+    //   · `puedeRecibir` daba `false` a alguien que sí puede recibir
+    //   · el motivo decía «no llegó a registrarse en el servidor», que es MENTIRA
+    //
+    // Visto en pantalla el 2026-08-31: «No puede recibir» sobre un teléfono registrado
+    // hacía tres minutos. Y cualquier comercio que use `puedeRecibir` para decidir qué
+    // mostrar, mostraba lo equivocado en cada arranque salvo el primero.
+    //
+    // Que el plan diga «no registrar» significa exactamente que el registro vigente
+    // sirve. Eso es estar registrado.
+    if (!plan.registrar && _huella != null && _token != null) {
+      _registrado = true;
+      _registradoEl ??= _huella!.cuando;
+    }
+
     if (plan.registrar || (plan.pedirPermiso && _token != null)) {
       try {
         await _registrarAhora(
