@@ -42,6 +42,13 @@ class DemoApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
+        // 🔴 LA ÚNICA LÍNEA QUE ESTA APLICACIÓN ESCRIBE PARA LA UBICACIÓN.
+        //
+        // Con esto el SDK ya puede levantar sus propias pantallas: al iniciar sesión
+        // ofrece la ubicación con su modal, usando los textos que este comercio
+        // configuró en la consola. Sin esta línea todo lo demás anda igual, pero el
+        // modal no tiene dónde dibujarse y no aparece.
+        navigatorKey: AkPush.navegador,
         title: 'ak_push',
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2D5F8A)),
@@ -216,6 +223,18 @@ class _PantallaState extends State<Pantalla> {
         title: const Text('ak_push'),
         backgroundColor: t.colorScheme.inversePrimary,
         actions: [
+          // 🔴 LA CAMPANITA — una línea, y viene hecha del SDK.
+          //
+          // Muestra un punto rojo cuando los avisos están apagados, explica al tocarla,
+          // y ofrece el único botón que puede arreglarlo en ese estado: pedir el permiso
+          // si el sistema todavía pregunta, o abrir los ajustes del teléfono si ya no.
+          // Se actualiza sola cuando la persona vuelve de los Ajustes.
+          //
+          // Quien prefiera dibujar la suya tiene los mismos servicios sueltos:
+          // AkPush.avisos · AkPush.estadoDeAvisos() · AkPush.resolverAvisos()
+          AkPush.campanita(
+            alResolver: (e) => _anotar('avisos: ${e.titulo.toLowerCase()}'),
+          ),
           IconButton(
             onPressed: _verDiagnostico,
             icon: const Icon(Icons.medical_information_outlined),

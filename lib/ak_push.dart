@@ -27,6 +27,13 @@ export 'src/sesion.dart'
 // AkPush.pedirPermiso(): sin este export nadie puede nombrarlo para guardarlo en
 // una variable. `GestorDePermiso` queda adentro, detrás de la fachada.
 export 'src/permiso.dart' show EstadoDelPermiso;
+// La campanita hecha, y el estado de los avisos en castellano. Quien quiera dibujar
+// su propia campana usa `EstadoDeAvisos` + `AkPush.avisos` + `AkPush.resolverAvisos()`;
+// quien no quiera dibujar nada pone `AkPush.campanita()` y listo.
+export 'src/campanita.dart' show CampanitaDeAvisos, EstadoDeAvisos;
+export 'src/modal_de_ubicacion.dart' show ModalDeUbicacion;
+export 'src/politica.dart'
+    show PoliticaDeUbicacion, TextosDeUbicacion, MomentoDeUbicacion;
 export 'src/push_message.dart' show AccionDePush, PushMessage;
 export 'src/remote_config.dart' show AkPushConfig;
 // `AvisoConRuta` va en el `show` o los atajos `mensaje.tieneRuta` y

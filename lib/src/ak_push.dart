@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/foundation.dart' show ValueListenable, VoidCallback;
-import 'package:flutter/material.dart' show BuildContext, GlobalKey, NavigatorState;
+import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier, VoidCallback, debugPrint;
+import 'package:flutter/material.dart'
+    show BuildContext, Color, GlobalKey, NavigatorState, Widget;
 
 import 'api_client.dart';
+import 'campanita.dart';
 import 'decision_de_dibujo.dart';
 import 'device_info.dart';
 import 'diagnostico.dart';
@@ -90,6 +92,16 @@ class AkPush {
   /// que reproduce el comportamiento de siempre.
   PoliticaDeNotificaciones _politica = PoliticaDeNotificaciones.comoEstabaAntes;
   PoliticaDeUbicacion _politicaDeUbicacion = const PoliticaDeUbicacion();
+  final ValueNotifier<EstadoDeAvisos?> _avisos = ValueNotifier(null);
+
+  EstadoDeAvisos _publicarAvisos(EstadoDeAvisos e) {
+    _avisos.value = e;
+    // El servidor tiene que enterarse de que esta persona apagó —o encendió— los
+    // avisos. Si no, se le sigue enviando a un teléfono que no muestra nada y las
+    // estadísticas dicen «entregado» sobre algo que nadie vio.
+    unawaited(_reconciliar());
+    return e;
+  }
 
 
   /// La última vez que se registró, para no repetir una llamada que no cambia
@@ -381,7 +393,24 @@ class AkPush {
       // contexto tomado más arriba apuntaría a un árbol que ya no existe, y el modal
       // no aparecería nunca — sin ningún error que lo delate.
       final ctx = context ?? navegador.currentContext;
-      if (ctx == null || !ctx.mounted) return false;
+      if (ctx == null || !ctx.mounted) {
+        // 🔴 SE AVISA, NO SE FALLA MUDO. Éste es el error de integración más probable
+        // del SDK entero: el comercio prende la ubicación en la consola, abre la
+        // aplicación, no pasa nada, y no hay ni un renglón que diga por qué. Medido
+        // acá mismo el 2026-08-31: el modal no salió y sólo se supo mirando el código.
+        //
+        // Sale sólo en depuración: en producción no se le llena el registro a nadie
+        // con esto, y para entonces la integración ya está hecha.
+        assert(() {
+          debugPrint(
+            '[ak_push] La ubicación está activa para este comercio, pero el SDK no '
+            'tiene dónde dibujar el modal. Agregá «navigatorKey: AkPush.navegador» '
+            'a tu MaterialApp, o llamá a AkPush.ofrecerUbicacion(context) vos mismo.',
+          );
+          return true;
+        }());
+        return false;
+      }
 
       final quiere = await ModalDeUbicacion.mostrar(
         ctx,
@@ -672,6 +701,77 @@ class AkPush {
   /// Devuelve el estado que quedó, que no siempre es el que se esperaba: pedir
   /// cuando ya está [EstadoDelPermiso.denegadoParaSiempre] no muestra nada.
   static Future<EstadoDelPermiso> pedirPermiso() => _yo._pedirPermisoAhora();
+
+  // ══ LOS AVISOS, PARA DIBUJARLOS ═══════════════════════════════════════════════
+  //
+  // Lo de arriba dice el estado crudo. Esto lo dice en castellano, y sobre todo
+  // resuelve la distinción que si se erra rompe la confianza: cuándo el botón puede
+  // activar los avisos de verdad y cuándo lo único que queda son los Ajustes.
+  //
+  // Pedido de Juan, 2026-08-31: *«el SDK debería proporcionar un link para aceptar
+  // notificaciones... yo voy a hacer el front ahí, pero me voy a servir de los
+  // servicios del SDK»*. Por eso van los servicios sueltos Y la campanita hecha:
+  // quien quiera dibujar lo suyo tiene con qué, y quien no, la pone en una línea.
+
+  /// Cómo están los avisos, en lenguaje llano y con qué ofrecerle a la persona.
+  static Future<EstadoDeAvisos> estadoDeAvisos() async =>
+      _yo._avisos.value = EstadoDeAvisos.de(await _yo._estadoDelPermiso());
+
+  /// LA CAMPANITA, ENCHUFADA. Una línea y no hace falta nada más:
+  ///
+  /// ```dart
+  /// AppBar(actions: [AkPush.campanita()])
+  /// ```
+  ///
+  /// Muestra un punto rojo cuando hay algo que resolver, abre una hoja que explica
+  /// cómo están los avisos, y ofrece el único botón que puede arreglarlo en ese
+  /// estado —pedir el permiso, o abrir los ajustes cuando el sistema ya no pregunta.
+  /// Se actualiza sola cuando la persona vuelve de los Ajustes.
+  static Widget campanita({
+    Color? color,
+    void Function(EstadoDeAvisos)? alResolver,
+  }) =>
+      CampanitaDeAvisos(
+        color: color,
+        alResolver: alResolver,
+        estado: estadoDeAvisos,
+        resolver: resolverAvisos,
+      );
+
+  /// Se actualiza sola cuando la aplicación vuelve del fondo.
+  ///
+  /// 🔴 Ése es el caso que importa: la persona va a los Ajustes del teléfono, activa
+  /// los avisos y vuelve. Sin esto la pantalla sigue diciendo «apagados» hasta que
+  /// alguien reinicie la aplicación, y la persona cree que ir no le sirvió de nada.
+  static ValueListenable<EstadoDeAvisos?> get avisos => _yo._avisos;
+
+  /// HACE LO QUE CORRESPONDA SEGÚN EL ESTADO, Y DEVUELVE CÓMO QUEDÓ.
+  ///
+  /// Si el sistema todavía pregunta, levanta su diálogo. Si ya no —dos negativas en
+  /// Android, una en iPhone—, abre los ajustes del teléfono, que es la única salida
+  /// que queda. Y si ya estaban activados no hace nada.
+  ///
+  /// La aplicación no tiene que saber en cuál de los tres casos está: llama a esto.
+  static Future<EstadoDeAvisos> resolverAvisos() => _yo._resolverAvisos();
+
+  Future<EstadoDeAvisos> _resolverAvisos() async {
+    var e = EstadoDeAvisos.de(await _estadoDelPermiso());
+    if (e.puedeRecibir && !e.hayQueIrAAjustes) return _publicarAvisos(e);
+
+    if (e.hayQueIrAAjustes) {
+      await _permiso.abrirAjustes();
+      // 🔴 No se vuelve a leer el estado acá. Los ajustes se abren en OTRA pantalla y
+      // esta línea corre un instante después, con la persona todavía mirando la lista
+      // de permisos: lo que se leyera sería el estado viejo, y la campana se pintaría
+      // en rojo justo cuando la persona acaba de activarlos. El estado bueno llega
+      // solo cuando la aplicación vuelve del fondo — de eso se encarga [avisos].
+      return e;
+    }
+
+    await _pedirPermisoAhora();
+    e = EstadoDeAvisos.de(await _estadoDelPermiso());
+    return _publicarAvisos(e);
+  }
 
   Future<EstadoDelPermiso> _pedirPermisoAhora() async {
     _estado = await _permiso.pedir();
