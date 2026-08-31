@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -630,6 +631,18 @@ class AkPush {
           : await _permiso.estadoActual();
       await _obtenerToken(descartarElViejo: cambio);
 
+      // 🔴 LA DIRECCIÓN ES DE LA INSTALACIÓN, ASÍ QUE SE MANDA APENAS SE TIENE.
+      //
+      // La instalación se dio de alta más arriba, cuando todavía no había token: primero
+      // se pide la configuración, después se inicia Firebase, y recién ahí hay dirección.
+      // Sin esta línea el token se queda en el teléfono hasta que alguien inicie sesión —
+      // y una aplicación donde nadie se loguea figura «sin token» para siempre.
+      //
+      // Medido el 2026-08-31 integrando el SDK en una aplicación de verdad: arrancó,
+      // registró la instalación, obtuvo su token, y en la consola aparecía sin dirección.
+      // No estaba roto: nadie se lo había contado al servidor.
+      await _reportarLaDireccion();
+
       await Presentador.instancia.iniciar();
       _escuchar();
       await _procesarArranqueEnFrio();
@@ -689,6 +702,26 @@ class AkPush {
       await _api!.registrarInstalacion(
         instalacionId: instalacionId,
         aparato: datos.toJson(),
+      );
+    } catch (e) {
+      _ultimoError = e is AkPushError ? e : null;
+    }
+  }
+
+  /// Le cuenta al servidor la dirección de ESTA instalación, sin necesidad de que haya
+  /// nadie logueado. El token pertenece al aparato; el sujeto es otra cosa.
+  ///
+  /// No tumba nada si falla: quedará sin dirección hasta el próximo arranque o hasta que
+  /// alguien inicie sesión, que es exactamente como estaba antes.
+  Future<void> _reportarLaDireccion() async {
+    if (_token == null || _api == null) return;
+    try {
+      await _api!.actualizarAvisosDeInstalacion(
+        instalacionId: await _almacen.leerOCrearInstalacionId(),
+        token: _token!,
+        plataforma: Platform.isIOS ? 'ios' : 'android',
+        permiso: _estado.permiteRecibir,
+        estadoDelPermiso: _estado.name,
       );
     } catch (e) {
       _ultimoError = e is AkPushError ? e : null;

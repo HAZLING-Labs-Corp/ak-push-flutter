@@ -347,4 +347,31 @@ class AkPushApi {
           }),
         ));
   }
+
+  /// LA DIRECCIÓN DE ESTA INSTALACIÓN, SIN NECESIDAD DE QUE HAYA NADIE LOGUEADO.
+  ///
+  /// El token pertenece al APARATO. Antes sólo llegaba al servidor dentro del alta de un
+  /// dispositivo, que ocurre al iniciar sesión — así que una aplicación donde nadie se
+  /// loguea figuraba sin dirección para siempre, aunque la tuviera.
+  Future<void> actualizarAvisosDeInstalacion({
+    required String instalacionId,
+    required String token,
+    required String plataforma,
+    required bool permiso,
+    String? estadoDelPermiso,
+  }) async {
+    await _pedir(() => _cliente.post(
+          Uri.parse('$baseUrl/api/v1/instalaciones'),
+          headers: _cabeceras,
+          body: jsonEncode({
+            'instalacionId': instalacionId,
+            'avisos': {
+              'token': token,
+              'plataforma': plataforma,
+              'permiso': permiso,
+              if (estadoDelPermiso != null) 'estado': estadoDelPermiso,
+            },
+          }),
+        ));
+  }
 }
