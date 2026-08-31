@@ -1,9 +1,10 @@
 import 'dart:convert';
 
-import 'package:ak_push/ak_push.dart';
+import 'package:hz_collection_sdk/hz_collection_sdk.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 
+import 'lo_recolectado.dart';
 import 'personas_de_prueba.dart';
 
 /// El `10.0.2.2` es cómo un emulador de Android alcanza el localhost de la
@@ -42,7 +43,14 @@ class DemoApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'ak_push',
+        // 🔴 LA ÚNICA LÍNEA QUE ESTA APLICACIÓN ESCRIBE PARA LA UBICACIÓN.
+        //
+        // Con esto el SDK ya puede levantar sus propias pantallas: al iniciar sesión
+        // ofrece la ubicación con su modal, usando los textos que este comercio
+        // configuró en la consola. Sin esta línea todo lo demás anda igual, pero el
+        // modal no tiene dónde dibujarse y no aparece.
+        navigatorKey: AkPush.navegador,
+        title: 'Collection',
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2D5F8A)),
           useMaterial3: true,
@@ -59,6 +67,9 @@ class Pantalla extends StatefulWidget {
 
 class _PantallaState extends State<Pantalla> {
   final List<String> _bitacora = [];
+
+  /// Qué pestaña se está mirando: 0 sesión · 1 datos · 2 ubicación.
+  int _vista = 0;
   String _estado = 'iniciando…';
   String? _token;
   PersonaDePrueba? _dentro;
@@ -105,7 +116,32 @@ class _PantallaState extends State<Pantalla> {
     try {
       final r = await AkPush.alIniciarSesion(
         userId: p.userId,
+        // Es una empresa, o una persona natural — para las dos empresas del
+        // juego de prueba esto sale en `TipoDeSujeto.juridica`.
+        tipo: p.tipo,
+        // El documento. Es lo que le permite a un sistema de afuera pedir un envío
+        // sin conocer el `userId` interno del comercio — que no tiene por qué
+        // conocer. Reemplaza a la vieja `identity`: ahora declara también la CLASE
+        // (cédula, RIF, pasaporte), no sólo el número.
+        documento: p.documento,
+        // La organización a la que pertenece, si tiene una — los dos empleados de
+        // proveedor del juego de prueba la traen puesta.
+        organizacion: p.organizacion,
         identityHash: _firmarComoLoHariaElBackend(p.userId),
+        // 🔴 LO QUE EL COMERCIO SABE DE ESTA PERSONA, y que el servicio no puede
+        // inventar. Sin esto la consola muestra `u_9000` y nada más: no se puede
+        // buscar a nadie por su nombre, ni segmentar un envío por sucursal o por plan.
+        //
+        // No hay que declarar estos campos en ningún lado: el servicio los DESCUBRE
+        // de lo que llega y arma los filtros solo. Cada comercio manda los suyos.
+        datos: {
+          'nombre': p.nombre,
+          'usuario': p.usuario,
+          'correo': p.correo,
+          'sucursal': p.sucursal,
+          'ciudad': p.ciudad,
+          'plan': p.plan,
+        },
       );
       setState(() {
         _dentro = p;
@@ -129,6 +165,12 @@ class _PantallaState extends State<Pantalla> {
     }
   }
 
+
+  /// Pide la ubicación y manda la posición.
+  ///
+  /// Primero se explica para qué sirve y recién después sale el diálogo del
+  /// sistema: el permiso que se pide sin explicar es el que se deniega, y en
+  /// Android un «no» al de ubicación tampoco se vuelve a preguntar solo.
   Future<void> _preguntaBlanda() async {
     final t = AkPush.politica.textos;
     final si = await showDialog<bool>(
@@ -190,9 +232,21 @@ class _PantallaState extends State<Pantalla> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ak_push'),
+        title: const Text('Collection'),
         backgroundColor: t.colorScheme.inversePrimary,
         actions: [
+          // 🔴 LA CAMPANITA — una línea, y viene hecha del SDK.
+          //
+          // Muestra un punto rojo cuando los avisos están apagados, explica al tocarla,
+          // y ofrece el único botón que puede arreglarlo en ese estado: pedir el permiso
+          // si el sistema todavía pregunta, o abrir los ajustes del teléfono si ya no.
+          // Se actualiza sola cuando la persona vuelve de los Ajustes.
+          //
+          // Quien prefiera dibujar la suya tiene los mismos servicios sueltos:
+          // AkPush.avisos · AkPush.estadoDeAvisos() · AkPush.resolverAvisos()
+          AkPush.campanita(
+            alResolver: (e) => _anotar('avisos: ${e.titulo.toLowerCase()}'),
+          ),
           IconButton(
             onPressed: _verDiagnostico,
             icon: const Icon(Icons.medical_information_outlined),
@@ -200,7 +254,34 @@ class _PantallaState extends State<Pantalla> {
           ),
         ],
       ),
-      body: ListView(
+      // ── LAS TRES VISTAS ────────────────────────────────────────────────────
+      //
+      // «Sesión» es lo que había: el estado y quién entró. Las otras dos son para VER lo
+      // que se recolecta — y eso no es una comodidad de la demo: un colector que no le
+      // deja mirar a la persona qué se llevó es lo que hace que la gente desconfíe.
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _vista,
+        onDestinationSelected: (i) => setState(() => _vista = i),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.badge_outlined),
+            selectedIcon: Icon(Icons.badge),
+            label: 'Sesión'),
+          NavigationDestination(
+            icon: Icon(Icons.storage_outlined),
+            selectedIcon: Icon(Icons.storage),
+            label: 'Datos'),
+          NavigationDestination(
+            icon: Icon(Icons.place_outlined),
+            selectedIcon: Icon(Icons.place),
+            label: 'Ubicación'),
+        ],
+      ),
+      body: _vista == 1
+          ? const LoRecolectado()
+          : _vista == 2
+              ? const DondeEstuvo()
+              : ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Card(
@@ -215,8 +296,17 @@ class _PantallaState extends State<Pantalla> {
                     const SizedBox(height: 10),
                     Text('${_dentro!.usuario} · ${_dentro!.nombre}',
                         style: t.textTheme.titleMedium),
-                    Text('${_dentro!.cedula} · ${_dentro!.sucursal} · ${_dentro!.plan}',
+                    Text(
+                        '${_dentro!.tipo == TipoDeSujeto.juridica ? "RIF" : "cédula"} '
+                        '${_dentro!.cedula} · ${_dentro!.sucursal} · ${_dentro!.plan}',
                         style: t.textTheme.bodySmall),
+                    // Sólo aparece para los empleados de proveedor del juego de
+                    // prueba: es lo que demuestra que el sujeto PERTENECE a la
+                    // organización sin dejar de ser él mismo.
+                    if (_dentro!.organizacion != null)
+                      Text('de ${_dentro!.organizacion}',
+                          style: t.textTheme.bodySmall
+                              ?.copyWith(fontStyle: FontStyle.italic)),
                   ],
                   if (r != null) ...[
                     const SizedBox(height: 12),
@@ -258,6 +348,18 @@ class _PantallaState extends State<Pantalla> {
               ),
             ),
           ]),
+          // ── La ubicación la ofrece el SDK, no esta pantalla ─────────────
+          //
+          // 🔴 Acá NO hay ningún botón, y es a propósito: este archivo es el ejemplo
+          // de lo que un comercio tiene que escribir para usar el SDK, y la respuesta
+          // es «nada». El SDK levanta su propio modal al iniciar sesión —con los textos
+          // que ese comercio configuró en la consola— siempre que le hayan prestado el
+          // `navigatorKey` al `MaterialApp`, que es la única línea que hace falta.
+          //
+          // Si un comercio prefiere ofrecerla en otro momento —al abrir el mapa de
+          // sucursales, digamos, que es cuando más gente acepta— pone el momento en
+          // «laAppDecide» desde la consola y llama a `AkPush.ofrecerUbicacion(context)`
+          // donde quiera.
           const SizedBox(height: 20),
           Text('Bitácora', style: t.textTheme.labelMedium),
           const Divider(),
@@ -287,16 +389,24 @@ class _Selector extends StatefulWidget {
 class _SelectorState extends State<_Selector> {
   String _texto = '';
 
+  // Las cien más los cuatro casos de identidad —dos empresas con RIF, dos
+  // empleados de un proveedor—, para que los cuatro sean seleccionables acá.
+  // Van al principio: son los que hay que poder encontrar sin escribir nada.
+  static const _todas = <PersonaDePrueba>[
+    ...casosDeIdentidadDePrueba,
+    ...cienPersonas,
+  ];
+
   @override
   Widget build(BuildContext context) {
     // Se busca por las tres vías a la vez y se juntan sin repetir: por nombre
-    // —que es un atributo—, por cédula —que es un alias— y por usuario.
+    // —que es un atributo—, por cédula/RIF —que es un alias— y por usuario.
     final lista = _texto.isEmpty
-        ? cienPersonas
+        ? _todas
         : <PersonaDePrueba>{
-            ...buscarPorNombre(_texto),
-            if (porCedula(_texto) != null) porCedula(_texto)!,
-            ...cienPersonas.where((p) => p.usuario.contains(_texto)),
+            ..._todas.where((p) => p.nombre.toLowerCase().contains(_texto.toLowerCase())),
+            ..._todas.where((p) => p.cedula == _texto),
+            ..._todas.where((p) => p.usuario.contains(_texto)),
           }.toList();
 
     return DraggableScrollableSheet(
@@ -322,9 +432,17 @@ class _SelectorState extends State<_Selector> {
               itemCount: lista.length,
               itemBuilder: (c, i) {
                 final p = lista[i];
+                // Los cuatro casos de identidad se marcan acá para poder
+                // encontrarlos de un vistazo entre las cien: RIF para las
+                // empresas, y la organización para los empleados de proveedor.
+                final marca = p.tipo == TipoDeSujeto.juridica
+                    ? ' · RIF ${p.cedula}'
+                    : p.organizacion != null
+                        ? ' · ${p.organizacion!.nombre ?? p.organizacion!.codigo}'
+                        : '';
                 return ListTile(
                   dense: true,
-                  title: Text('${p.usuario} · ${p.nombre}'),
+                  title: Text('${p.usuario} · ${p.nombre}$marca'),
                   subtitle: Text('${p.cedula} · ${p.sucursal} · ${p.plan}'),
                   onTap: () => Navigator.pop(c, p),
                 );

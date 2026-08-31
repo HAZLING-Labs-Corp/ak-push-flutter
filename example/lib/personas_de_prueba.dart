@@ -26,7 +26,19 @@
 /// ningún lado donde haya datos de alguien.
 ///
 /// Las cédulas y los correos son inventados y no corresponden a nadie.
+///
+/// ## Los cuatro casos del modelo de identidad
+///
+/// Las cien de abajo son todas personas naturales con cédula — el caso de
+/// siempre. Al final de este archivo hay CUATRO más, agregadas con el
+/// rediseño de colecciones, que prueban lo que las cien no pueden: DOS
+/// **empresas** (`TipoDeSujeto.juridica`, documento con `ClaseDeDocumento.rif`)
+/// y DOS **empleados de un proveedor** (naturales, pero con [Organizacion] —
+/// el sujeto PERTENECE a la organización, no se reemplaza por ella). Ver
+/// [casosDeIdentidadDePrueba].
 library;
+
+import 'package:hz_collection_sdk/hz_collection_sdk.dart';
 
 /// Una persona del juego de prueba.
 class PersonaDePrueba {
@@ -39,9 +51,16 @@ class PersonaDePrueba {
     required this.sucursal,
     required this.ciudad,
     required this.plan,
+    this.tipo = TipoDeSujeto.natural,
+    this.claseDeDocumento = ClaseDeDocumento.cedula,
+    this.organizacion,
   });
 
   /// La clave con la que el comercio la identifica. Opaca para el SDK.
+  ///
+  /// En estas personas de prueba se compone a propósito —`usuario1-12137717`— en vez de ser
+  /// un `u_9000` cualquiera: en la consola del proveedor se ve el identificador, y uno opaco
+  /// obliga a ir a buscar de quién es cada vez. En un comercio de verdad será lo que él use.
   final String userId;
 
   /// Con qué entra: `usuario1` … `usuario100`. La contraseña es [claveDePrueba]
@@ -49,6 +68,11 @@ class PersonaDePrueba {
   final String usuario;
 
   // ── alias · se direcciona por acá ──────────────────────────────────────
+  //
+  // 🔴 El nombre del campo quedó de cuando sólo existían personas naturales.
+  // Para los cuatro casos de [casosDeIdentidadDePrueba] guarda el número de
+  // documento que corresponda —un RIF para las empresas—, y [claseDeDocumento]
+  // dice cuál es. No se renombró el campo para no tocar las cien de abajo.
   final String cedula;
   final String correo;
 
@@ -57,6 +81,22 @@ class PersonaDePrueba {
   final String sucursal;
   final String ciudad;
   final String plan;
+
+  /// Si es una persona natural o una empresa. Por omisión, natural: es lo que
+  /// son las cien de abajo.
+  final TipoDeSujeto tipo;
+
+  /// Con qué clase de documento se identifica [cedula]. Por omisión, cédula.
+  final ClaseDeDocumento claseDeDocumento;
+
+  /// La organización a la que pertenece, si tiene una. `null` en las cien:
+  /// no todo el mundo trabaja para un proveedor del comercio.
+  final Organizacion? organizacion;
+
+  /// El documento tal como lo espera `AkPush.alIniciarSesion`. Se arma desde
+  /// [cedula] y [claseDeDocumento]: son las dos empresas las que cambian la
+  /// clase, no el campo — así el resto del demo no se entera de la diferencia.
+  Documento get documento => Documento(clase: claseDeDocumento, numero: cedula);
 
   /// Lo que el backend del comercio le mandaría al servicio para darla de alta.
   Map<String, dynamic> get comoAlta => {
@@ -80,7 +120,7 @@ const claveDePrueba = 'admin123';
 
 const cienPersonas = <PersonaDePrueba>[
   PersonaDePrueba(
-    userId: 'u_9000',
+    userId: 'usuario1-12137717',
     usuario: 'usuario1',
     cedula: '12137717',
     correo: 'ana.rodriguez0@ejemplo.com',
@@ -90,7 +130,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9001',
+    userId: 'usuario2-12276345',
     usuario: 'usuario2',
     cedula: '12276345',
     correo: 'miguel.rivas1@ejemplo.com',
@@ -100,7 +140,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9002',
+    userId: 'usuario3-12415884',
     usuario: 'usuario3',
     cedula: '12415884',
     correo: 'marisol.colmenares2@ejemplo.com',
@@ -110,7 +150,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9003',
+    userId: 'usuario4-12556334',
     usuario: 'usuario4',
     cedula: '12556334',
     correo: 'douglas.hernandez3@ejemplo.com',
@@ -120,7 +160,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9004',
+    userId: 'usuario5-12697695',
     usuario: 'usuario5',
     cedula: '12697695',
     correo: 'yusmary.guerra4@ejemplo.com',
@@ -130,7 +170,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9005',
+    userId: 'usuario6-12839967',
     usuario: 'usuario6',
     cedula: '12839967',
     correo: 'nestor.quintero5@ejemplo.com',
@@ -140,7 +180,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9006',
+    userId: 'usuario7-12983150',
     usuario: 'usuario7',
     cedula: '12983150',
     correo: 'aixa.lopez6@ejemplo.com',
@@ -150,7 +190,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9007',
+    userId: 'usuario8-13127244',
     usuario: 'usuario8',
     cedula: '13127244',
     correo: 'simon.rojas7@ejemplo.com',
@@ -160,7 +200,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9008',
+    userId: 'usuario9-13272249',
     usuario: 'usuario9',
     cedula: '13272249',
     correo: 'rosa.suarez8@ejemplo.com',
@@ -170,7 +210,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9009',
+    userId: 'usuario10-13418165',
     usuario: 'usuario10',
     cedula: '13418165',
     correo: 'jesús.torres9@ejemplo.com',
@@ -180,7 +220,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9010',
+    userId: 'usuario11-13564992',
     usuario: 'usuario11',
     cedula: '13564992',
     correo: 'yajaira.medina10@ejemplo.com',
@@ -190,7 +230,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9011',
+    userId: 'usuario12-13712730',
     usuario: 'usuario12',
     cedula: '13712730',
     correo: 'alexander.gonzalez11@ejemplo.com',
@@ -200,7 +240,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9012',
+    userId: 'usuario13-13861379',
     usuario: 'usuario13',
     cedula: '13861379',
     correo: 'katiuska.blanco12@ejemplo.com',
@@ -210,7 +250,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9013',
+    userId: 'usuario14-14010939',
     usuario: 'usuario14',
     cedula: '14010939',
     correo: 'jhonny.bastidas13@ejemplo.com',
@@ -220,7 +260,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9014',
+    userId: 'usuario15-14161410',
     usuario: 'usuario15',
     cedula: '14161410',
     correo: 'yaritza.garcia14@ejemplo.com',
@@ -230,7 +270,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9015',
+    userId: 'usuario16-14312792',
     usuario: 'usuario16',
     cedula: '14312792',
     correo: 'pedro.mendoza15@ejemplo.com',
@@ -240,7 +280,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9016',
+    userId: 'usuario17-14465085',
     usuario: 'usuario17',
     cedula: '14465085',
     correo: 'gladys.pacheco16@ejemplo.com',
@@ -250,7 +290,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9017',
+    userId: 'usuario18-14618289',
     usuario: 'usuario18',
     cedula: '14618289',
     correo: 'argenis.sanchez17@ejemplo.com',
@@ -260,7 +300,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9018',
+    userId: 'usuario19-14772404',
     usuario: 'usuario19',
     cedula: '14772404',
     correo: 'nairobi.castillo18@ejemplo.com',
@@ -270,7 +310,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9019',
+    userId: 'usuario20-14927430',
     usuario: 'usuario20',
     cedula: '14927430',
     correo: 'gustavo.villalobos19@ejemplo.com',
@@ -280,7 +320,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9020',
+    userId: 'usuario21-15083367',
     usuario: 'usuario21',
     cedula: '15083367',
     correo: 'coromoto.flores20@ejemplo.com',
@@ -290,7 +330,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9021',
+    userId: 'usuario22-15240215',
     usuario: 'usuario22',
     cedula: '15240215',
     correo: 'osmel.salazar21@ejemplo.com',
@@ -300,7 +340,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9022',
+    userId: 'usuario23-15397974',
     usuario: 'usuario23',
     cedula: '15397974',
     correo: 'carmen.perez22@ejemplo.com',
@@ -310,7 +350,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9023',
+    userId: 'usuario24-15556644',
     usuario: 'usuario24',
     cedula: '15556644',
     correo: 'rafael.moreno23@ejemplo.com',
@@ -320,7 +360,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9024',
+    userId: 'usuario25-15716225',
     usuario: 'usuario25',
     cedula: '15716225',
     correo: 'nelida.marcano24@ejemplo.com',
@@ -330,7 +370,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9025',
+    userId: 'usuario26-15876717',
     usuario: 'usuario26',
     cedula: '15876717',
     correo: 'orlando.martinez25@ejemplo.com',
@@ -340,7 +380,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9026',
+    userId: 'usuario27-16038120',
     usuario: 'usuario27',
     cedula: '16038120',
     correo: 'solange.silva26@ejemplo.com',
@@ -350,7 +390,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9027',
+    userId: 'usuario28-16200434',
     usuario: 'usuario28',
     cedula: '16200434',
     correo: 'edgar.zambrano27@ejemplo.com',
@@ -360,7 +400,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9028',
+    userId: 'usuario29-16363659',
     usuario: 'usuario29',
     cedula: '16363659',
     correo: 'nakary.ramirez28@ejemplo.com',
@@ -370,7 +410,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9029',
+    userId: 'usuario30-16527795',
     usuario: 'usuario30',
     cedula: '16527795',
     correo: 'jose.vargas29@ejemplo.com',
@@ -380,7 +420,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9030',
+    userId: 'usuario31-16692842',
     usuario: 'usuario31',
     cedula: '16692842',
     correo: 'yolanda.rodriguez30@ejemplo.com',
@@ -390,7 +430,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9031',
+    userId: 'usuario32-16858800',
     usuario: 'usuario32',
     cedula: '16858800',
     correo: 'franklin.rivas31@ejemplo.com',
@@ -400,7 +440,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9032',
+    userId: 'usuario33-17025669',
     usuario: 'usuario33',
     cedula: '17025669',
     correo: 'belkis.colmenares32@ejemplo.com',
@@ -410,7 +450,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9033',
+    userId: 'usuario34-17193449',
     usuario: 'usuario34',
     cedula: '17193449',
     correo: 'freddy.hernandez33@ejemplo.com',
@@ -420,7 +460,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9034',
+    userId: 'usuario35-17362140',
     usuario: 'usuario35',
     cedula: '17362140',
     correo: 'morella.guerra34@ejemplo.com',
@@ -430,7 +470,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9035',
+    userId: 'usuario36-17531742',
     usuario: 'usuario36',
     cedula: '17531742',
     correo: 'eleazar.quintero35@ejemplo.com',
@@ -440,7 +480,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9036',
+    userId: 'usuario37-17702255',
     usuario: 'usuario37',
     cedula: '17702255',
     correo: 'maria.lopez36@ejemplo.com',
@@ -450,7 +490,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9037',
+    userId: 'usuario38-17873679',
     usuario: 'usuario38',
     cedula: '17873679',
     correo: 'carlos.rojas37@ejemplo.com',
@@ -460,7 +500,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9038',
+    userId: 'usuario39-18046014',
     usuario: 'usuario39',
     cedula: '18046014',
     correo: 'zulay.suarez38@ejemplo.com',
@@ -470,7 +510,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9039',
+    userId: 'usuario40-18219260',
     usuario: 'usuario40',
     cedula: '18219260',
     correo: 'wilmer.torres39@ejemplo.com',
@@ -480,7 +520,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9040',
+    userId: 'usuario41-18393417',
     usuario: 'usuario41',
     cedula: '18393417',
     correo: 'deisy.medina40@ejemplo.com',
@@ -490,7 +530,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9041',
+    userId: 'usuario42-18568485',
     usuario: 'usuario42',
     cedula: '18568485',
     correo: 'anibal.gonzalez41@ejemplo.com',
@@ -500,7 +540,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9042',
+    userId: 'usuario43-18744464',
     usuario: 'usuario43',
     cedula: '18744464',
     correo: 'rosalba.blanco42@ejemplo.com',
@@ -510,7 +550,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9043',
+    userId: 'usuario44-18921354',
     usuario: 'usuario44',
     cedula: '18921354',
     correo: 'luis.bastidas43@ejemplo.com',
@@ -520,7 +560,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9044',
+    userId: 'usuario45-19099155',
     usuario: 'usuario45',
     cedula: '19099155',
     correo: 'elena.garcia44@ejemplo.com',
@@ -530,7 +570,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9045',
+    userId: 'usuario46-19277867',
     usuario: 'usuario46',
     cedula: '19277867',
     correo: 'antonio.mendoza45@ejemplo.com',
@@ -540,7 +580,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9046',
+    userId: 'usuario47-19457490',
     usuario: 'usuario47',
     cedula: '19457490',
     correo: 'milagros.pacheco46@ejemplo.com',
@@ -550,7 +590,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9047',
+    userId: 'usuario48-19638024',
     usuario: 'usuario48',
     cedula: '19638024',
     correo: 'ramon.sanchez47@ejemplo.com',
@@ -560,7 +600,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9048',
+    userId: 'usuario49-19819469',
     usuario: 'usuario49',
     cedula: '19819469',
     correo: 'yenifer.castillo48@ejemplo.com',
@@ -570,7 +610,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9049',
+    userId: 'usuario50-20001825',
     usuario: 'usuario50',
     cedula: '20001825',
     correo: 'wladimir.villalobos49@ejemplo.com',
@@ -580,7 +620,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9050',
+    userId: 'usuario51-20185092',
     usuario: 'usuario51',
     cedula: '20185092',
     correo: 'ana.flores50@ejemplo.com',
@@ -590,7 +630,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9051',
+    userId: 'usuario52-20369270',
     usuario: 'usuario52',
     cedula: '20369270',
     correo: 'miguel.salazar51@ejemplo.com',
@@ -600,7 +640,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9052',
+    userId: 'usuario53-20554359',
     usuario: 'usuario53',
     cedula: '20554359',
     correo: 'marisol.perez52@ejemplo.com',
@@ -610,7 +650,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9053',
+    userId: 'usuario54-20740359',
     usuario: 'usuario54',
     cedula: '20740359',
     correo: 'douglas.moreno53@ejemplo.com',
@@ -620,7 +660,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9054',
+    userId: 'usuario55-20927270',
     usuario: 'usuario55',
     cedula: '20927270',
     correo: 'yusmary.marcano54@ejemplo.com',
@@ -630,7 +670,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9055',
+    userId: 'usuario56-21115092',
     usuario: 'usuario56',
     cedula: '21115092',
     correo: 'nestor.martinez55@ejemplo.com',
@@ -640,7 +680,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9056',
+    userId: 'usuario57-21303825',
     usuario: 'usuario57',
     cedula: '21303825',
     correo: 'aixa.silva56@ejemplo.com',
@@ -650,7 +690,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9057',
+    userId: 'usuario58-21493469',
     usuario: 'usuario58',
     cedula: '21493469',
     correo: 'simon.zambrano57@ejemplo.com',
@@ -660,7 +700,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9058',
+    userId: 'usuario59-21684024',
     usuario: 'usuario59',
     cedula: '21684024',
     correo: 'rosa.ramirez58@ejemplo.com',
@@ -670,7 +710,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9059',
+    userId: 'usuario60-21875490',
     usuario: 'usuario60',
     cedula: '21875490',
     correo: 'jesús.vargas59@ejemplo.com',
@@ -680,7 +720,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9060',
+    userId: 'usuario61-22067867',
     usuario: 'usuario61',
     cedula: '22067867',
     correo: 'yajaira.rodriguez60@ejemplo.com',
@@ -690,7 +730,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9061',
+    userId: 'usuario62-22261155',
     usuario: 'usuario62',
     cedula: '22261155',
     correo: 'alexander.rivas61@ejemplo.com',
@@ -700,7 +740,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9062',
+    userId: 'usuario63-22455354',
     usuario: 'usuario63',
     cedula: '22455354',
     correo: 'katiuska.colmenares62@ejemplo.com',
@@ -710,7 +750,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9063',
+    userId: 'usuario64-22650464',
     usuario: 'usuario64',
     cedula: '22650464',
     correo: 'jhonny.hernandez63@ejemplo.com',
@@ -720,7 +760,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9064',
+    userId: 'usuario65-22846485',
     usuario: 'usuario65',
     cedula: '22846485',
     correo: 'yaritza.guerra64@ejemplo.com',
@@ -730,7 +770,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9065',
+    userId: 'usuario66-23043417',
     usuario: 'usuario66',
     cedula: '23043417',
     correo: 'pedro.quintero65@ejemplo.com',
@@ -740,7 +780,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9066',
+    userId: 'usuario67-23241260',
     usuario: 'usuario67',
     cedula: '23241260',
     correo: 'gladys.lopez66@ejemplo.com',
@@ -750,7 +790,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9067',
+    userId: 'usuario68-23440014',
     usuario: 'usuario68',
     cedula: '23440014',
     correo: 'argenis.rojas67@ejemplo.com',
@@ -760,7 +800,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9068',
+    userId: 'usuario69-23639679',
     usuario: 'usuario69',
     cedula: '23639679',
     correo: 'nairobi.suarez68@ejemplo.com',
@@ -770,7 +810,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9069',
+    userId: 'usuario70-23840255',
     usuario: 'usuario70',
     cedula: '23840255',
     correo: 'gustavo.torres69@ejemplo.com',
@@ -780,7 +820,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9070',
+    userId: 'usuario71-24041742',
     usuario: 'usuario71',
     cedula: '24041742',
     correo: 'coromoto.medina70@ejemplo.com',
@@ -790,7 +830,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9071',
+    userId: 'usuario72-24244140',
     usuario: 'usuario72',
     cedula: '24244140',
     correo: 'osmel.gonzalez71@ejemplo.com',
@@ -800,7 +840,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9072',
+    userId: 'usuario73-24447449',
     usuario: 'usuario73',
     cedula: '24447449',
     correo: 'carmen.blanco72@ejemplo.com',
@@ -810,7 +850,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9073',
+    userId: 'usuario74-24651669',
     usuario: 'usuario74',
     cedula: '24651669',
     correo: 'rafael.bastidas73@ejemplo.com',
@@ -820,7 +860,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9074',
+    userId: 'usuario75-24856800',
     usuario: 'usuario75',
     cedula: '24856800',
     correo: 'nelida.garcia74@ejemplo.com',
@@ -830,7 +870,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9075',
+    userId: 'usuario76-25062842',
     usuario: 'usuario76',
     cedula: '25062842',
     correo: 'orlando.mendoza75@ejemplo.com',
@@ -840,7 +880,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9076',
+    userId: 'usuario77-25269795',
     usuario: 'usuario77',
     cedula: '25269795',
     correo: 'solange.pacheco76@ejemplo.com',
@@ -850,7 +890,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9077',
+    userId: 'usuario78-25477659',
     usuario: 'usuario78',
     cedula: '25477659',
     correo: 'edgar.sanchez77@ejemplo.com',
@@ -860,7 +900,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9078',
+    userId: 'usuario79-25686434',
     usuario: 'usuario79',
     cedula: '25686434',
     correo: 'nakary.castillo78@ejemplo.com',
@@ -870,7 +910,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9079',
+    userId: 'usuario80-25896120',
     usuario: 'usuario80',
     cedula: '25896120',
     correo: 'jose.villalobos79@ejemplo.com',
@@ -880,7 +920,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9080',
+    userId: 'usuario81-26106717',
     usuario: 'usuario81',
     cedula: '26106717',
     correo: 'yolanda.flores80@ejemplo.com',
@@ -890,7 +930,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9081',
+    userId: 'usuario82-26318225',
     usuario: 'usuario82',
     cedula: '26318225',
     correo: 'franklin.salazar81@ejemplo.com',
@@ -900,7 +940,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9082',
+    userId: 'usuario83-26530644',
     usuario: 'usuario83',
     cedula: '26530644',
     correo: 'belkis.perez82@ejemplo.com',
@@ -910,7 +950,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9083',
+    userId: 'usuario84-26743974',
     usuario: 'usuario84',
     cedula: '26743974',
     correo: 'freddy.moreno83@ejemplo.com',
@@ -920,7 +960,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9084',
+    userId: 'usuario85-26958215',
     usuario: 'usuario85',
     cedula: '26958215',
     correo: 'morella.marcano84@ejemplo.com',
@@ -930,7 +970,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9085',
+    userId: 'usuario86-27173367',
     usuario: 'usuario86',
     cedula: '27173367',
     correo: 'eleazar.martinez85@ejemplo.com',
@@ -940,7 +980,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9086',
+    userId: 'usuario87-27389430',
     usuario: 'usuario87',
     cedula: '27389430',
     correo: 'maria.silva86@ejemplo.com',
@@ -950,7 +990,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9087',
+    userId: 'usuario88-27606404',
     usuario: 'usuario88',
     cedula: '27606404',
     correo: 'carlos.zambrano87@ejemplo.com',
@@ -960,7 +1000,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9088',
+    userId: 'usuario89-27824289',
     usuario: 'usuario89',
     cedula: '27824289',
     correo: 'zulay.ramirez88@ejemplo.com',
@@ -970,7 +1010,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9089',
+    userId: 'usuario90-28043085',
     usuario: 'usuario90',
     cedula: '28043085',
     correo: 'wilmer.vargas89@ejemplo.com',
@@ -980,7 +1020,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9090',
+    userId: 'usuario91-28262792',
     usuario: 'usuario91',
     cedula: '28262792',
     correo: 'deisy.rodriguez90@ejemplo.com',
@@ -990,7 +1030,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9091',
+    userId: 'usuario92-28483410',
     usuario: 'usuario92',
     cedula: '28483410',
     correo: 'anibal.rivas91@ejemplo.com',
@@ -1000,7 +1040,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9092',
+    userId: 'usuario93-28704939',
     usuario: 'usuario93',
     cedula: '28704939',
     correo: 'rosalba.colmenares92@ejemplo.com',
@@ -1010,7 +1050,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9093',
+    userId: 'usuario94-28927379',
     usuario: 'usuario94',
     cedula: '28927379',
     correo: 'luis.hernandez93@ejemplo.com',
@@ -1020,7 +1060,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9094',
+    userId: 'usuario95-29150730',
     usuario: 'usuario95',
     cedula: '29150730',
     correo: 'elena.guerra94@ejemplo.com',
@@ -1030,7 +1070,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9095',
+    userId: 'usuario96-29374992',
     usuario: 'usuario96',
     cedula: '29374992',
     correo: 'antonio.quintero95@ejemplo.com',
@@ -1040,7 +1080,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Plata',
   ),
   PersonaDePrueba(
-    userId: 'u_9096',
+    userId: 'usuario97-29600165',
     usuario: 'usuario97',
     cedula: '29600165',
     correo: 'milagros.lopez96@ejemplo.com',
@@ -1050,7 +1090,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Bronce',
   ),
   PersonaDePrueba(
-    userId: 'u_9097',
+    userId: 'usuario98-29826249',
     usuario: 'usuario98',
     cedula: '29826249',
     correo: 'ramon.rojas97@ejemplo.com',
@@ -1060,7 +1100,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Empleados',
   ),
   PersonaDePrueba(
-    userId: 'u_9098',
+    userId: 'usuario99-30053244',
     usuario: 'usuario99',
     cedula: '30053244',
     correo: 'yenifer.suarez98@ejemplo.com',
@@ -1070,7 +1110,7 @@ const cienPersonas = <PersonaDePrueba>[
     plan: 'Oro',
   ),
   PersonaDePrueba(
-    userId: 'u_9099',
+    userId: 'usuario100-30281150',
     usuario: 'usuario100',
     cedula: '30281150',
     correo: 'wladimir.torres99@ejemplo.com',
@@ -1128,3 +1168,82 @@ List<PersonaDePrueba> buscarPorNombre(String texto) {
       .where((p) => p.nombre.toLowerCase().contains(t))
       .toList();
 }
+
+// ── Los cuatro casos del modelo de identidad ───────────────────────────────
+//
+// Van APARTE de las cien, no mezclados adentro: [cienPersonas] promete cien
+// personas naturales con cédula desde su propio nombre y su comentario, y
+// agregar acá cuatro entradas de otra forma lo volvería falso para quien lo
+// lea sin mirar el final del archivo. `main.dart` junta las dos listas para
+// que las cuatro sean seleccionables en la pantalla del demo.
+
+/// Dos empresas — `TipoDeSujeto.juridica`, con RIF.
+const empresasDePrueba = <PersonaDePrueba>[
+  PersonaDePrueba(
+    userId: 'empresa1-J304521679',
+    usuario: 'empresa1',
+    cedula: 'J-304521679',
+    correo: 'compras@distribuidoraelfaro.com.ve',
+    nombre: 'Distribuidora El Faro, C.A.',
+    sucursal: 'CCS-01',
+    ciudad: 'Caracas',
+    plan: 'Empresas',
+    tipo: TipoDeSujeto.juridica,
+    claseDeDocumento: ClaseDeDocumento.rif,
+  ),
+  PersonaDePrueba(
+    userId: 'empresa2-J403187745',
+    usuario: 'empresa2',
+    cedula: 'J-403187745',
+    correo: 'administracion@construval.com.ve',
+    nombre: 'Construval Ingeniería, C.A.',
+    sucursal: 'VAL-02',
+    ciudad: 'Valencia',
+    plan: 'Empresas',
+    tipo: TipoDeSujeto.juridica,
+    claseDeDocumento: ClaseDeDocumento.rif,
+  ),
+];
+
+/// Dos empleados de un proveedor — naturales, con [Organizacion]. El sujeto
+/// PERTENECE a la organización, no se reemplaza por ella: sigue teniendo su
+/// propia cédula y su propio `userId`.
+const empleadosDeProveedorDePrueba = <PersonaDePrueba>[
+  PersonaDePrueba(
+    userId: 'empleado1-19988341',
+    usuario: 'empleado1',
+    cedula: '19988341',
+    correo: 'jgimenez@logisticasur.com.ve',
+    nombre: 'Julio Giménez',
+    sucursal: 'MCB-02',
+    ciudad: 'Maracaibo',
+    plan: 'Empleados',
+    organizacion: Organizacion(
+      codigo: 'prov-logisticasur',
+      nombre: 'Logística Sur, C.A.',
+      rol: 'repartidor',
+    ),
+  ),
+  PersonaDePrueba(
+    userId: 'empleado2-20214477',
+    usuario: 'empleado2',
+    cedula: '20214477',
+    correo: 'mtovar@logisticasur.com.ve',
+    nombre: 'Mariana Tovar',
+    sucursal: 'MCB-02',
+    ciudad: 'Maracaibo',
+    plan: 'Empleados',
+    organizacion: Organizacion(
+      codigo: 'prov-logisticasur',
+      nombre: 'Logística Sur, C.A.',
+      rol: 'supervisora',
+    ),
+  ),
+];
+
+/// Las cuatro juntas, para ofrecerlas en la pantalla del demo junto con las
+/// cien. Ver la nota de arriba sobre por qué no van adentro de [cienPersonas].
+const casosDeIdentidadDePrueba = <PersonaDePrueba>[
+  ...empresasDePrueba,
+  ...empleadosDeProveedorDePrueba,
+];

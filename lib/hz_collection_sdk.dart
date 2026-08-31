@@ -1,0 +1,63 @@
+/// Recibir notificaciones push con una llave y una línea.
+///
+/// El PAQUETE se llama `hz_collection_sdk` — el producto es Collection—, pero
+/// la clase pública sigue siendo `AkPush`.
+///
+/// 🔴 PENDIENTE, A PROPÓSITO: la consola muestra `AkPush.init({...})` como
+/// ejemplo copiable en su pantalla de integración, y renombrar la clase acá
+/// sin coordinar ese cambio con la consola rompe ese ejemplo para todo el
+/// que lo copie mientras tanto. Cuando se renombre, es un cambio coordinado
+/// entre los dos lados, no algo que se resuelve solo de este lado.
+library;
+
+export 'src/ak_push.dart' show AkPush, manejadorDeSegundoPlano;
+export 'src/decision_de_dibujo.dart' show DecidirDibujo, DecisionDeDibujo;
+export 'src/diagnostico.dart'
+    show
+        Diagnostico,
+        Eslabon,
+        EstadoDeFirebase,
+        EstadoDeLaConfiguracion,
+        EstadoDelRegistro,
+        EstadoDelToken,
+        EstadoDeUbicacion;
+export 'src/errors.dart' show AkPushError, AkPushErrorCode;
+export 'src/consentimiento.dart' show Consentimiento;
+export 'src/politica.dart'
+    show
+        PoliticaDeNotificaciones,
+        MomentoDelPermiso,
+        TextosDeLaPregunta,
+        AccionDePermiso,
+        Disparador,
+        decidirQueHacer;
+export 'src/sesion.dart'
+    show ResultadoDeSesion, HuellaDelRegistro, PlanDeSesion, planearInicioDeSesion, motivoDeSesion;
+// `EstadoDelPermiso` es el tipo que devuelven AkPush.estadoDelPermiso() y
+// AkPush.pedirPermiso(): sin este export nadie puede nombrarlo para guardarlo en
+// una variable. `GestorDePermiso` queda adentro, detrás de la fachada.
+export 'src/permiso.dart' show EstadoDelPermiso;
+// QUÉ SE RECOLECTA DE ESTE APARATO, para que la aplicación lo pueda MOSTRAR.
+//
+// 🔴 No es un extra de la demo: un colector de datos que no le deja ver a la persona
+// qué recolectó es exactamente lo que la gente desconfía. Y del lado del comercio, es
+// lo que le permite armar su propia pantalla de «tus datos» sin pedirnos nada.
+export 'src/device_info.dart' show DatosDelDispositivo;
+// La campanita hecha, y el estado de los avisos en castellano. Quien quiera dibujar
+// su propia campana usa `EstadoDeAvisos` + `AkPush.avisos` + `AkPush.resolverAvisos()`;
+// quien no quiera dibujar nada pone `AkPush.campanita()` y listo.
+export 'src/campanita.dart' show CampanitaDeAvisos, EstadoDeAvisos;
+export 'src/modal_de_ubicacion.dart' show ModalDeUbicacion;
+export 'src/politica.dart'
+    show PoliticaDeUbicacion, TextosDeUbicacion, MomentoDeUbicacion;
+export 'src/push_message.dart' show AccionDePush, PushMessage;
+export 'src/remote_config.dart' show AkPushConfig, InfoDeModulo;
+// El sujeto — quien se loguea — y su documento y organización. Es la raíz del
+// modelo nuevo: sin este export nadie puede armar un `Documento` para pasarlo
+// a `AkPush.alIniciarSesion`.
+export 'src/sujeto.dart'
+    show TipoDeSujeto, ClaseDeDocumento, Documento, Organizacion;
+// `AvisoConRuta` va en el `show` o los atajos `mensaje.tieneRuta` y
+// `mensaje.ruta` no existen para quien integra: una extensión que no se exporta
+// no se aplica del otro lado.
+export 'src/ruta.dart' show AvisoConRuta, IntencionPendiente, RutaDelAviso;

@@ -1,4 +1,4 @@
-name: ak_push
+name: hz_collection_sdk
 description: "Recibir notificaciones push con una llave y una línea. La cuenta de Google llega desde el servidor: no se pega ningún archivo de configuración."
 version: 0.1.0
 publish_to: 'none'
@@ -39,6 +39,10 @@ dependencies:
   # si no se puede leer, el alta sigue igual.
   device_info_plus: ^10.1.2
   package_info_plus: ^8.1.2
+  battery_plus: ^6.2.1
+  connectivity_plus: ^6.1.0
+  disk_space_plus: ^0.2.3
+  geolocator: ^14.0.2
 
 dev_dependencies:
   flutter_test:

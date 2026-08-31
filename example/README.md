@@ -1,4 +1,4 @@
-# Ejemplo de `ak_push`
+# Ejemplo de `hz_collection_sdk`
 
 Una aplicación en blanco que sólo instala el SDK. Sirve para ver el flujo
 completo y para probar contra un servicio de verdad.

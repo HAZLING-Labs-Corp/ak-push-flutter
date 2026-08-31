@@ -62,11 +62,43 @@ class HuellaDelRegistro {
     required this.token,
     required this.permisoConcedido,
     required this.cuando,
+    this.huellaDeDatos,
   });
 
   final String userId;
   final String token;
   final bool permisoConcedido;
+
+  /// Resumen de los datos que el comercio manda de esta persona.
+  ///
+  /// 🔴 SIN ESTO, UN CAMBIO DE DATOS NO LLEGA NUNCA. La sucursal de una persona
+  /// cambia, y el plan más todavía: si la huella no los mira, el SDK ve «mismo
+  /// usuario, mismo token, mismo permiso», da el registro por hecho y no vuelve
+  /// a llamar. El servidor se queda con la sucursal vieja para siempre y los
+  /// envíos segmentados le pegan al grupo equivocado, sin ningún error.
+  ///
+  /// Se guarda el resumen y no los datos: la huella se compara, no se lee, y
+  /// dejar copiados el nombre y el correo de la persona en el almacenamiento
+  /// del teléfono es guardar datos personales que no hacen falta.
+  ///
+  /// 🔴 Esta huella es del alta del TOKEN (`/api/v1/dispositivos`), no del
+  /// alta del SUJETO (`/api/v1/sujetos`). El `tipo`, el `documento` y la
+  /// `organizacion` que se agregaron con el rediseño de colecciones NO viajan
+  /// por acá ni tienen que entrar en este resumen: esa alta no se acota con
+  /// ninguna huella, se llama en CADA inicio de sesión — ver el comentario en
+  /// `AkPush._alIniciarSesion`. Si algún día ese dato empezara a viajar
+  /// TAMBIÉN por el alta del token, ahí sí tendría que entrar acá, o —tal
+  /// como advierte esta nota— un cambio no llegaría nunca al servidor sin que
+  /// ningún error lo delate.
+  final String? huellaDeDatos;
+
+  /// El resumen que se compara. Las claves van ordenadas para que el mismo mapa
+  /// escrito en otro orden no parezca un cambio.
+  static String? resumirDatos(Map<String, dynamic>? datos) {
+    if (datos == null || datos.isEmpty) return null;
+    final claves = datos.keys.toList()..sort();
+    return claves.map((k) => '\$k=\${datos[k]}').join('&').hashCode.toString();
+  }
 
   /// Cuándo se registró. Es lo que le pone techo a lo que la huella puede
   /// equivocarse — ver [venció].
@@ -76,10 +108,16 @@ class HuellaDelRegistro {
   /// alcanza con comparar el token: si la persona concedió el permiso desde los
   /// Ajustes del teléfono, el token es el mismo y **el servidor tiene que
   /// enterarse igual**, porque filtra por eso antes de enviar.
-  bool esLoMismoQue(String otroUserId, String otroToken, bool otroPermiso) =>
+  bool esLoMismoQue(
+    String otroUserId,
+    String otroToken,
+    bool otroPermiso, [
+    String? otraHuellaDeDatos,
+  ]) =>
       userId == otroUserId &&
       token == otroToken &&
-      permisoConcedido == otroPermiso;
+      permisoConcedido == otroPermiso &&
+      huellaDeDatos == otraHuellaDeDatos;
 
   /// 🔴 La huella es LOCAL, y puede mentir.
   ///
@@ -106,6 +144,7 @@ class HuellaDelRegistro {
         'token': token,
         'permisoConcedido': permisoConcedido,
         'cuando': cuando.toIso8601String(),
+        if (huellaDeDatos != null) 'huellaDeDatos': huellaDeDatos,
       };
 
   static HuellaDelRegistro? fromJson(Map<String, dynamic>? j) {
@@ -119,6 +158,7 @@ class HuellaDelRegistro {
       token: j['token'] as String,
       permisoConcedido: j['permisoConcedido'] as bool? ?? true,
       cuando: cuando ?? DateTime.fromMillisecondsSinceEpoch(0),
+      huellaDeDatos: j['huellaDeDatos'] as String?,
     );
   }
 }
@@ -169,6 +209,9 @@ PlanDeSesion planearInicioDeSesion({
   required HuellaDelRegistro? ultimoRegistro,
   required bool yaSePregunto,
   required DateTime ahora,
+  /// Resumen de los datos que manda el comercio. Si cambió, hay que registrar
+  /// de nuevo aunque todo lo demás sea idéntico — ver `HuellaDelRegistro`.
+  String? huellaDeDatos,
   int maxDiasSinRevalidar = 7,
   Duration? desdeLaUltimaPregunta,
 }) {
@@ -194,7 +237,7 @@ PlanDeSesion planearInicioDeSesion({
   final registrar = token != null &&
       (cambioDePersona ||
           ultimoRegistro == null ||
-          !ultimoRegistro.esLoMismoQue(userId, token, concedido) ||
+          !ultimoRegistro.esLoMismoQue(userId, token, concedido, huellaDeDatos) ||
           // Aunque no haya cambiado nada: la huella es local y el servidor pudo
           // haber limpiado este dispositivo sin que el teléfono se entere.
           ultimoRegistro.vencio(ahora, maxDiasSinRevalidar));

@@ -2,9 +2,12 @@ import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/foundation.dart' show ValueListenable, VoidCallback;
+import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier, VoidCallback, debugPrint;
+import 'package:flutter/material.dart'
+    show BuildContext, Color, GlobalKey, NavigatorState, Widget;
 
 import 'api_client.dart';
+import 'campanita.dart';
 import 'decision_de_dibujo.dart';
 import 'device_info.dart';
 import 'diagnostico.dart';
@@ -13,10 +16,13 @@ import 'permiso.dart';
 import 'consentimiento.dart';
 import 'politica.dart';
 import 'sesion.dart';
+import 'modal_de_ubicacion.dart';
+import 'ubicacion.dart';
 import 'presenter.dart';
 import 'push_message.dart';
 import 'remote_config.dart';
 import 'ruta.dart';
+import 'sujeto.dart';
 
 /// Manejador de segundo plano.
 ///
@@ -86,6 +92,18 @@ class AkPush {
   /// Lo que el comercio configuró. Hasta que el servicio sirva el campo, es la
   /// que reproduce el comportamiento de siempre.
   PoliticaDeNotificaciones _politica = PoliticaDeNotificaciones.comoEstabaAntes;
+  PoliticaDeUbicacion _politicaDeUbicacion = const PoliticaDeUbicacion();
+  final ValueNotifier<EstadoDeAvisos?> _avisos = ValueNotifier(null);
+
+  EstadoDeAvisos _publicarAvisos(EstadoDeAvisos e) {
+    _avisos.value = e;
+    // El servidor tiene que enterarse de que esta persona apagó —o encendió— los
+    // avisos. Si no, se le sigue enviando a un teléfono que no muestra nada y las
+    // estadísticas dicen «entregado» sobre algo que nadie vio.
+    unawaited(_reconciliar());
+    return e;
+  }
+
 
   /// La última vez que se registró, para no repetir una llamada que no cambia
   /// nada — y para que la huella venza y se revalide sola.
@@ -96,6 +114,20 @@ class AkPush {
   Consentimiento _consentimiento = const Consentimiento();
 
   AkPushApi? _api;
+
+  /// Se arma junto con el cliente, en `init()`. Antes de eso no hay a quién
+  /// mandarle la posición.
+  Ubicacion? _ubicacionInterna;
+  Ubicacion get _ubicacion {
+    final u = _ubicacionInterna;
+    if (u == null) {
+      throw StateError(
+        'Hay que llamar a AkPush.init() antes de usar la ubicación: sin el '
+        'cliente no hay a dónde mandarla.',
+      );
+    }
+    return u;
+  }
   AkPushConfig? _config;
   final ConfigStore _almacen = ConfigStore();
 
@@ -223,6 +255,15 @@ class AkPush {
   /// si la aplicación declara algo que sabe por su cuenta.
   static String? get comercio => _yo._config?.comercio;
 
+  /// El catálogo de módulos que el servidor tiene para este comercio —
+  /// `avisos`, `ubicacion`, y los que estén sólo `declarado`s—, con la clave
+  /// siendo el nombre del módulo.
+  ///
+  /// Es sólo lectura: el paquete no construye nada a partir de esto. Sirve
+  /// para que la aplicación pueda mostrar, por ejemplo, qué le falta activar a
+  /// este comercio, sin tener que conocer el catálogo de memoria.
+  static Map<String, InfoDeModulo> get modulos => _yo._config?.modulos ?? const {};
+
   /// La aplicación avisa qué contestó la persona **en su propio modal**.
   ///
   /// Hay que llamarlo en los dos casos, no sólo cuando acepta: un «ahora no»
@@ -253,22 +294,221 @@ class AkPush {
 
   // ── El ciclo de sesión ──────────────────────────────────────────────────
 
-  /// Deja este teléfono en orden para esta persona: da de baja a la anterior si
-  /// era otra, resuelve el permiso según lo que configuró el comercio, y
-  /// registra sólo si hace falta.
+  /// Deja este teléfono en orden para esta persona: da de alta al SUJETO, da
+  /// de baja a la anterior si era otra, resuelve el permiso según lo que
+  /// configuró el comercio, y registra el módulo de avisos sólo si hace falta.
   ///
   /// Es lo que hay que llamar al iniciar sesión. Devuelve el resumen de cómo
   /// quedó, que es lo que la aplicación necesita para decidir qué mostrar.
+  ///
+  /// [tipo] si el sujeto es una persona natural o jurídica (empresa). Por
+  /// omisión, natural.
+  ///
+  /// [documento] su documento de identidad —cédula, RIF, pasaporte—. Es lo que
+  /// permite que un sistema de afuera pida un envío por cédula sin conocer el
+  /// [userId] interno del comercio.
+  ///
+  /// [organizacion] la organización a la que PERTENECE, si tiene una —por
+  /// ejemplo, un empleado de un proveedor—. No reemplaza al sujeto: cuelga de
+  /// él.
+  ///
+  /// [datos] es lo que el comercio sabe de esta persona —nombre, sucursal, plan,
+  /// segmento— y que nosotros no podemos inventar. Sin esto, la consola muestra
+  /// un identificador opaco y no hay forma de buscar a nadie ni de segmentar un
+  /// envío. Se manda en cada inicio de sesión, no una sola vez: la sucursal de
+  /// una persona cambia, y el plan más todavía.
+  ///
+  /// [identityHash] es la firma que calcula el backend del comercio sobre el
+  /// [userId]. El servicio la verifica cuando el comercio activó ese modo.
+  ///
+  /// 🔴 **Es el corazón del rediseño**: el sujeto se da de alta ANTES de tocar
+  /// ningún permiso. Hasta acá, quien decía que no a los avisos no quedaba
+  /// anotado en ningún lado —sin permiso no hay token, y sin token no había
+  /// alta—. Después de esta llamada esa persona existe para el sistema con su
+  /// aparato enlazado, aunque el permiso quede en «denegado».
   static Future<ResultadoDeSesion> alIniciarSesion({
     required String userId,
+    TipoDeSujeto tipo = TipoDeSujeto.natural,
+    Documento? documento,
+    Organizacion? organizacion,
+    Map<String, dynamic>? datos,
     String? identityHash,
+    @Deprecated(
+      'Usá `documento: Documento(clase: ClaseDeDocumento.cedula, numero: '
+      '...)` en su lugar. Se sigue traduciendo sola —no se rompe nada— pero '
+      'sólo alcanza para cédulas: con `documento` se declara la clase real '
+      '(rif, pasaporte, otro) desde el arranque.',
+    )
     String? identity,
   }) =>
       _yo._alIniciarSesion(
         userId: userId,
+        tipo: tipo,
+        documento: documento,
+        organizacion: organizacion,
         identityHash: identityHash,
+        // ignore: deprecated_member_use_from_same_package
         identity: identity,
+        datos: datos,
       );
+
+  // ── Dónde está la persona ────────────────────────────────────────────────
+
+  /// ¿Se le puede pedir la ubicación, o ya contestó?
+  ///
+  /// `false` cuando ya la concedió o cuando la denegó para siempre — en ese
+  /// último caso el diálogo del sistema ya no se muestra y sólo quedan los
+  /// Ajustes del teléfono.
+  static Future<bool> get sePuedePedirUbicacion => _yo._ubicacion.sePuedePreguntar;
+
+  /// ¿Está concedida?
+  static Future<bool> get tieneUbicacion => _yo._ubicacion.concedido;
+
+  /// Pide el permiso de ubicación aproximada.
+  ///
+  /// 🔴 NO SE LLAMA EN EL ARRANQUE. Dos diálogos del sistema seguidos —el de
+  /// notificaciones y éste— es la forma más rápida de que la persona diga que
+  /// no a los dos. Se pide cuando la aplicación ya explicó para qué sirve.
+  static Future<bool> pedirUbicacion() => _yo._ubicacion.pedir();
+
+  /// La política que configuró el comercio para la ubicación.
+  static PoliticaDeUbicacion get politicaDeUbicacion => _yo._politicaDeUbicacion;
+
+  /// LE OFRECE A LA PERSONA COMPARTIR SU ZONA, CON EL MODAL DEL SDK.
+  ///
+  /// Explica primero —con los textos que escribió el comercio— y recién si dice que
+  /// sí levanta el diálogo del sistema. Devuelve si quedó concedido.
+  ///
+  /// El SDK la llama solo al iniciar sesión cuando el comercio puso el momento en
+  /// «despuesDeEntrar». Esta versión pública es para el otro momento, «laAppDecide»:
+  /// ofrecerla recién cuando sirve para algo —al abrir el mapa de sucursales, por
+  /// ejemplo— que es cuando más gente acepta.
+  ///
+  /// `context` es opcional: si la aplicación pasó [navegador] al `MaterialApp`, el
+  /// SDK dibuja sin que le den ninguno.
+  static Future<bool> ofrecerUbicacion([BuildContext? context]) =>
+      _yo._ofrecerUbicacion(context: context, forzar: true);
+
+  /// El motor. `forzar` distingue las dos entradas:
+  ///
+  ///  - **la automática** (al iniciar sesión) respeta la política: no ofrece nada si
+  ///    el comercio la tiene apagada, si el momento es otro, o si se le ofreció hace
+  ///    menos de `reintentarCadaDias`.
+  ///  - **la que pide la aplicación** salta esas condiciones —ya decidió que es el
+  ///    momento— pero NO salta las dos que no dependen de nadie: que el permiso no
+  ///    esté ya concedido, y que el sistema todavía acepte mostrarlo.
+  Future<bool> _ofrecerUbicacion({
+    BuildContext? context,
+    required bool forzar,
+  }) async {
+    try {
+      // 🔴 Si ya está concedido no se pregunta de nuevo. Un modal que pide algo que
+      // la persona ya dio es la clase de detalle que hace que se desconfíe del resto.
+      if (await _ubicacion.concedido) {
+        // Pero puede faltarle el otro interruptor. Ver [_avisarSiFaltaElServicio].
+        await _avisarSiFaltaElServicio();
+        return true;
+      }
+
+      // Y si el sistema ya no muestra el diálogo —dijo que no dos veces—, levantar el
+      // modal sería mentirle: acepta, no pasa nada, y no hay forma de explicarle por
+      // qué. Sólo le queda los Ajustes, y eso se ofrece en otro lado.
+      if (!await _ubicacion.sePuedePreguntar) return false;
+
+      if (!forzar) {
+        if (!_politicaDeUbicacion.activa) return false;
+        if (_politicaDeUbicacion.momento != MomentoDeUbicacion.despuesDeEntrar) {
+          return false;
+        }
+        final desde = await _almacen.desdeLaUltimaOfertaDeUbicacion();
+        if (desde != null &&
+            desde.inDays < _politicaDeUbicacion.reintentarCadaDias) {
+          return false;
+        }
+      }
+
+      // 🔴 Se toma el contexto DESPUÉS de los `await` de arriba, no antes. Entre que
+      // se consulta el permiso y se dibuja el modal la aplicación pudo cambiar de
+      // pantalla, y un contexto capturado antes apuntaría a algo que ya no existe:
+      // el modal no aparece, o aparece colgado de un árbol muerto.
+      // Se anota ANTES de mostrarlo, no después. Si se anotara al cerrar y la persona
+      // mata la aplicación con el modal abierto, en el próximo arranque lo ve otra
+      // vez, y otra, y otra. Preferimos perder una oferta a hostigar a alguien.
+      await _almacen.guardarOfertaDeUbicacion(DateTime.now());
+
+      // 🔴 El contexto se busca ACÁ, después del último `await`, y no antes. Entre
+      // consultar el permiso y dibujar, la aplicación pudo cambiar de pantalla: un
+      // contexto tomado más arriba apuntaría a un árbol que ya no existe, y el modal
+      // no aparecería nunca — sin ningún error que lo delate.
+      final ctx = context ?? navegador.currentContext;
+      if (ctx == null || !ctx.mounted) {
+        // 🔴 SE AVISA, NO SE FALLA MUDO. Éste es el error de integración más probable
+        // del SDK entero: el comercio prende la ubicación en la consola, abre la
+        // aplicación, no pasa nada, y no hay ni un renglón que diga por qué. Medido
+        // acá mismo el 2026-08-31: el modal no salió y sólo se supo mirando el código.
+        //
+        // Sale sólo en depuración: en producción no se le llena el registro a nadie
+        // con esto, y para entonces la integración ya está hecha.
+        assert(() {
+          debugPrint(
+            '[ak_push] La ubicación está activa para este comercio, pero el SDK no '
+            'tiene dónde dibujar el modal. Agregá «navigatorKey: AkPush.navegador» '
+            'a tu MaterialApp, o llamá a AkPush.ofrecerUbicacion(context) vos mismo.',
+          );
+          return true;
+        }());
+        return false;
+      }
+
+      final quiere = await ModalDeUbicacion.mostrar(
+        ctx,
+        textos: _politicaDeUbicacion.textos,
+      );
+      if (!quiere) return false;
+
+      final concedido = await _ubicacion.pedir();
+      if (!concedido) return false;
+
+      // 🔴 EL PERMISO NO ALCANZA: FALTA QUE EL TELÉFONO TENGA LA UBICACIÓN PRENDIDA.
+      //
+      // Son dos interruptores distintos y hasta hoy sólo se miraba uno. Medido en un
+      // HONOR real el 2026-08-31: modal aceptado, diálogo del sistema aceptado, permiso
+      // concedido — y cero posiciones, porque el interruptor general estaba apagado. No
+      // hubo ni un error: `_leer()` devolvía null y el catch se lo tragaba. En la
+      // consola se veía «con permiso, sin ubicaciones», que parece el sistema roto.
+      //
+      // Se le avisa en el momento, que es cuando la persona todavía está pensando en
+      // esto y acaba de decir que sí. Un aviso media hora después no lo lee nadie.
+      if (await _avisarSiFaltaElServicio()) {
+        // Se devuelve `true` igual: el permiso QUEDÓ concedido, que es lo que preguntó
+        // quien llamó. Lo que falta es del teléfono, no de esta persona, y en cuanto
+        // prenda la ubicación las posiciones empiezan a llegar solas.
+        return true;
+      }
+
+      // La primera posición se manda ya: sin esto la consola muestra a alguien «con
+      // ubicación activa» y cero posiciones hasta el próximo arranque, que parece roto
+      // aunque no lo esté.
+      if (_userId != null) {
+        await _ubicacion.reportarSiCorresponde(_userId!, forzar: true);
+      }
+      return true;
+    } catch (_) {
+      // Nunca tumba nada: perder una ubicación cuesta un dato de segmentación; que
+      // falle el inicio de sesión cuesta que esa persona no reciba nada.
+      return false;
+    }
+  }
+
+  /// Lee y manda dónde está, si hay permiso y si pasó el tiempo mínimo.
+  ///
+  /// Devuelve si mandó algo. Nunca lanza: perder una posición cuesta un dato de
+  /// segmentación; que falle el arranque cuesta que esa persona no reciba nada.
+  static Future<bool> reportarUbicacion({bool forzar = false}) async {
+    final u = _yo._userId;
+    if (u == null) return false;
+    return _yo._ubicacion.reportarSiCorresponde(u, forzar: forzar);
+  }
 
   /// Cierra el ciclo: da de baja el teléfono y limpia la barra de estado.
   static Future<void> alCerrarSesion() => _yo._logout();
@@ -298,6 +538,20 @@ class AkPush {
   ///
   /// [url] se configura en vez de quemarse, para poder apuntar a calidad o a
   /// producción sin publicar una versión nueva de la aplicación.
+  /// La llave del navegador de la aplicación, para que el SDK pueda levantar sus
+  /// propias pantallas.
+  ///
+  /// Se pasa una vez, en el `MaterialApp`:
+  ///
+  /// ```dart
+  /// MaterialApp(navigatorKey: AkPush.navegador, home: ...)
+  /// ```
+  ///
+  /// Con eso el SDK ya ofrece la ubicación solo, cuando el comercio lo activó desde
+  /// la consola. Sin eso todo lo demás sigue andando igual — sólo que la ubicación
+  /// hay que ofrecerla a mano con [ofrecerUbicacion].
+  static final GlobalKey<NavigatorState> navegador = GlobalKey<NavigatorState>();
+
   static Future<void> init({
     required String llave,
     String? url,
@@ -332,9 +586,19 @@ class AkPush {
           baseUrl ?? 'https://api-push.creditotal.online');
 
       _api = AkPushApi(apiKey: apiKey, baseUrl: urlNormalizada);
+      _ubicacionInterna = Ubicacion(_api!);
 
       // Para el isolate de segundo plano, que no ve nada de esto. Ver H-09.
       await _almacen.guardarCredencial(apiKey, urlNormalizada);
+
+      // ══ LA INSTALACIÓN NACE ACÁ ═══════════════════════════════════════════
+      //
+      // Apenas hay datos del aparato y con quién hablar, sin esperar ni al
+      // permiso ni a que alguien inicie sesión: en el modelo nuevo el aparato
+      // existe primero y el sujeto se enlaza después, en `alIniciarSesion`.
+      // Por eso va sin token —todavía no se pidió permiso— y sin sujeto
+      // —todavía no entró nadie—.
+      await _registrarInstalacion(datos);
 
       _consentimiento = await _almacen.leerConsentimiento();
 
@@ -350,6 +614,7 @@ class AkPush {
       // El servidor manda. Si todavía no sirve el campo, `config.politica` es la
       // de siempre y no piso lo que declaró la aplicación.
       if (config.trajoPolitica) _politica = config.politica;
+      _politicaDeUbicacion = config.ubicacion;
 
       final cambio = cacheada != null && cacheada.version != config.version;
       if (cambio) {
@@ -407,6 +672,26 @@ class AkPush {
         return cacheada;
       }
       rethrow;
+    }
+  }
+
+  /// Da de alta —o actualiza— el APARATO en el modelo nuevo.
+  ///
+  /// 🔴 NUNCA TUMBA EL ARRANQUE. Sin red en el primerísimo arranque, la
+  /// instalación queda sin dar de alta y se reintenta sola en el próximo
+  /// `init()` — es upsert por `instalacionId`, así que reintentar no duplica
+  /// nada. Se anota el error para el diagnóstico y se sigue: éste es un dato
+  /// de inventario del aparato, no el permiso ni el token, y perderlo un
+  /// arranque no le cuesta un aviso a nadie.
+  Future<void> _registrarInstalacion(DatosDelDispositivo datos) async {
+    try {
+      final instalacionId = await _almacen.leerOCrearInstalacionId();
+      await _api!.registrarInstalacion(
+        instalacionId: instalacionId,
+        aparato: datos.toJson(),
+      );
+    } catch (e) {
+      _ultimoError = e is AkPushError ? e : null;
     }
   }
 
@@ -513,6 +798,113 @@ class AkPush {
   /// cuando ya está [EstadoDelPermiso.denegadoParaSiempre] no muestra nada.
   static Future<EstadoDelPermiso> pedirPermiso() => _yo._pedirPermisoAhora();
 
+  // ══ LOS AVISOS, PARA DIBUJARLOS ═══════════════════════════════════════════════
+  //
+  // Lo de arriba dice el estado crudo. Esto lo dice en castellano, y sobre todo
+  // resuelve la distinción que si se erra rompe la confianza: cuándo el botón puede
+  // activar los avisos de verdad y cuándo lo único que queda son los Ajustes.
+  //
+  // Pedido de Juan, 2026-08-31: *«el SDK debería proporcionar un link para aceptar
+  // notificaciones... yo voy a hacer el front ahí, pero me voy a servir de los
+  // servicios del SDK»*. Por eso van los servicios sueltos Y la campanita hecha:
+  // quien quiera dibujar lo suyo tiene con qué, y quien no, la pone en una línea.
+
+  /// 🔴 EL SEGUNDO INTERRUPTOR: LA UBICACIÓN DEL TELÉFONO.
+  ///
+  /// Tener el permiso no alcanza. Si el teléfono tiene la ubicación apagada no llega
+  /// ninguna posición, y hasta el 2026-08-31 eso pasaba **sin un solo error**: se leía
+  /// null y el catch se lo tragaba. En la consola la persona figuraba «con permiso, cero
+  /// ubicaciones», que parece un sistema roto y no lo es.
+  ///
+  /// Se avisa en los dos caminos —al conceder el permiso, y al iniciar sesión de quien
+  /// ya lo tenía—, porque alguien puede haber apagado el interruptor meses después de
+  /// haber dado el permiso y nadie se enteraría nunca.
+  ///
+  /// Con su propio freno, y bien separado del de la oferta de ubicación: son dos avisos
+  /// distintos, con dos causas distintas, y compartir la fecha haría que uno tapara al
+  /// otro. Devuelve si faltaba el servicio.
+  Future<bool> _avisarSiFaltaElServicio() async {
+    if (await _ubicacion.servicioPrendido) return false;
+
+    final desde = await _almacen.desdeElAvisoDeServicio();
+    // Una semana. Es un interruptor que la gente apaga a propósito —para ahorrar
+    // batería— y recordárselo todos los días sería hostigar; no recordárselo nunca
+    // es perder a alguien que ya dijo que sí y sólo le falta un toque.
+    if (desde != null && desde.inDays < 7) return true;
+
+    // Se anota antes de buscar el contexto, para no dejar `await` alguno entre tomar
+    // el contexto y dibujar: en ese hueco la aplicación puede haber cambiado de
+    // pantalla, y el modal se colgaría de un árbol que ya no existe.
+    await _almacen.guardarAvisoDeServicio(DateTime.now());
+
+    final ctx = navegador.currentContext;
+    if (ctx == null || !ctx.mounted) return true;
+
+    final ir = await ModalDeUbicacion.mostrarServicioApagado(ctx);
+    if (ir) await _ubicacion.abrirAjustesDeUbicacion();
+    return true;
+  }
+
+  /// Cómo están los avisos, en lenguaje llano y con qué ofrecerle a la persona.
+  static Future<EstadoDeAvisos> estadoDeAvisos() async =>
+      _yo._avisos.value = EstadoDeAvisos.de(await _yo._estadoDelPermiso());
+
+  /// LA CAMPANITA, ENCHUFADA. Una línea y no hace falta nada más:
+  ///
+  /// ```dart
+  /// AppBar(actions: [AkPush.campanita()])
+  /// ```
+  ///
+  /// Muestra un punto rojo cuando hay algo que resolver, abre una hoja que explica
+  /// cómo están los avisos, y ofrece el único botón que puede arreglarlo en ese
+  /// estado —pedir el permiso, o abrir los ajustes cuando el sistema ya no pregunta.
+  /// Se actualiza sola cuando la persona vuelve de los Ajustes.
+  static Widget campanita({
+    Color? color,
+    void Function(EstadoDeAvisos)? alResolver,
+  }) =>
+      CampanitaDeAvisos(
+        color: color,
+        alResolver: alResolver,
+        estado: estadoDeAvisos,
+        resolver: resolverAvisos,
+      );
+
+  /// Se actualiza sola cuando la aplicación vuelve del fondo.
+  ///
+  /// 🔴 Ése es el caso que importa: la persona va a los Ajustes del teléfono, activa
+  /// los avisos y vuelve. Sin esto la pantalla sigue diciendo «apagados» hasta que
+  /// alguien reinicie la aplicación, y la persona cree que ir no le sirvió de nada.
+  static ValueListenable<EstadoDeAvisos?> get avisos => _yo._avisos;
+
+  /// HACE LO QUE CORRESPONDA SEGÚN EL ESTADO, Y DEVUELVE CÓMO QUEDÓ.
+  ///
+  /// Si el sistema todavía pregunta, levanta su diálogo. Si ya no —dos negativas en
+  /// Android, una en iPhone—, abre los ajustes del teléfono, que es la única salida
+  /// que queda. Y si ya estaban activados no hace nada.
+  ///
+  /// La aplicación no tiene que saber en cuál de los tres casos está: llama a esto.
+  static Future<EstadoDeAvisos> resolverAvisos() => _yo._resolverAvisos();
+
+  Future<EstadoDeAvisos> _resolverAvisos() async {
+    var e = EstadoDeAvisos.de(await _estadoDelPermiso());
+    if (e.puedeRecibir && !e.hayQueIrAAjustes) return _publicarAvisos(e);
+
+    if (e.hayQueIrAAjustes) {
+      await _permiso.abrirAjustes();
+      // 🔴 No se vuelve a leer el estado acá. Los ajustes se abren en OTRA pantalla y
+      // esta línea corre un instante después, con la persona todavía mirando la lista
+      // de permisos: lo que se leyera sería el estado viejo, y la campana se pintaría
+      // en rojo justo cuando la persona acaba de activarlos. El estado bueno llega
+      // solo cuando la aplicación vuelve del fondo — de eso se encarga [avisos].
+      return e;
+    }
+
+    await _pedirPermisoAhora();
+    e = EstadoDeAvisos.de(await _estadoDelPermiso());
+    return _publicarAvisos(e);
+  }
+
   Future<EstadoDelPermiso> _pedirPermisoAhora() async {
     _estado = await _permiso.pedir();
     await _reconciliar();
@@ -554,6 +946,9 @@ class AkPush {
     final datos = await DatosDelDispositivo.recolectar();
     try {
       await _api?.registrarDispositivo(
+        // El mismo con el que se dio de alta la instalación: sin esto el servidor
+        // la identifica por el `deviceId` del aparato y crea una segunda.
+        instalacionId: await _almacen.leerOCrearInstalacionId(),
         userId: userId,
         token: _token!,
         plataforma: datos.plataforma,
@@ -573,27 +968,82 @@ class AkPush {
   /// Ata este teléfono a una persona. Se llama cuando inicia sesión.
   ///
   /// [identityHash] es la firma que calcula el backend del comercio sobre el
-  /// [userId]. Hoy el servidor todavía no la verifica; el parámetro está desde
-  /// la primera versión para que activarla después no rompa a nadie.
+  /// [userId]. El servicio SÍ la verifica desde el 2026-08-30, y cada comercio
+  /// elige en qué modo: apagada, avisando sin rechazar, o exigiéndola.
+  ///
+  /// [datos] es lo que el comercio sabe de esta persona —nombre, sucursal, plan,
+  /// segmento— y que el servicio usa para poder buscarla y segmentar envíos. Sin
+  /// esto, la consola sólo tiene un identificador opaco.
   static Future<void> identify({
     required String userId,
     String? identityHash,
     String? identity,
+    Map<String, dynamic>? datos,
   }) =>
       _yo._identify(
         userId: userId,
         identityHash: identityHash,
         identity: identity,
+        datos: datos,
       );
 
   /// El ciclo de sesión completo. La lógica de qué hacer vive en `sesion.dart`,
   /// separada de quien la ejecuta: acá sólo se cumple el plan.
   Future<ResultadoDeSesion> _alIniciarSesion({
     required String userId,
+    TipoDeSujeto tipo = TipoDeSujeto.natural,
+    Documento? documento,
+    Organizacion? organizacion,
     String? identityHash,
     String? identity,
+    Map<String, dynamic>? datos,
   }) async {
     _asegurarIniciado();
+
+    // 🔴 `identity` queda en desuso: se traduce ACÁ, una sola vez, para que
+    // todo lo de abajo trabaje siempre con `documento` sin importar por cuál
+    // de las dos entró quien integra.
+    final documentoResuelto = documento ??
+        (identity != null && identity.isNotEmpty
+            ? Documento(clase: ClaseDeDocumento.cedula, numero: identity)
+            : null);
+
+    // ══ EL SUJETO NACE ACÁ, ANTES DE TOCAR NINGÚN PERMISO ═══════════════════
+    //
+    // Es el corazón del rediseño: hasta ahora, sin permiso no había token, y
+    // sin token no había alta — quien decía que no a los avisos no quedaba
+    // anotado en ningún lado. Yendo primero acá, esta persona existe para el
+    // sistema con su aparato enlazado, aunque más abajo el permiso quede en
+    // «denegado».
+    //
+    // 🔴 SIN HUELLA A PROPÓSITO, a diferencia del alta del token de más abajo.
+    // El alta del token se acota con `HuellaDelRegistro` porque repetirla no
+    // cambia nada; ésta se llama en CADA inicio de sesión porque el servidor
+    // tiene que actualizar `visto.ultima` siempre, y porque es la única forma
+    // de que un cambio de documento o de organización llegue al servidor sin
+    // depender de que ADEMÁS haya cambiado el token o el permiso — que es
+    // justo el error que la huella del token ya causó una vez con `datos`
+    // (ver la nota en `HuellaDelRegistro`). No acotar esta llamada es cómo se
+    // evita caer en el mismo agujero por otra puerta.
+    try {
+      final instalacionId = await _almacen.leerOCrearInstalacionId();
+      await _api!.registrarSujeto(
+        sujetoId: userId,
+        tipo: tipo,
+        documento: documentoResuelto,
+        organizacion: organizacion,
+        datos: datos,
+        instalacionId: instalacionId,
+      );
+    } catch (e) {
+      // 🔴 SI ESTO FALLA, EL REGISTRO DEL TOKEN SE INTENTA IGUAL — ver más
+      // abajo. Encadenar el alta del token detrás de la del sujeto sin esta
+      // salvaguarda dejaría a la persona sin avisos por una falla de red que
+      // no tiene nada que ver con el permiso: un servidor caído en el instante
+      // del login no le puede costar los avisos a nadie. Se anota para el
+      // diagnóstico y se sigue.
+      _ultimoError = e is AkPushError ? e : null;
+    }
 
     // 🔴 Se le PREGUNTA al sistema operativo, no se confía en lo guardado. La
     // persona pudo haber apagado las notificaciones desde los Ajustes del
@@ -613,6 +1063,11 @@ class AkPush {
       yaSePregunto: await _almacen.yaSePreguntoElPermiso(),
       desdeLaUltimaPregunta: await _almacen.desdeLaUltimaPregunta(),
       ahora: DateTime.now(),
+      // 🔴 Si al comercio le cambió la sucursal o el plan de esta persona, hay que
+      // registrar de nuevo aunque el usuario, el token y el permiso sean idénticos.
+      // Sin esto el servidor se queda con el dato viejo para siempre y los envíos
+      // segmentados le pegan al grupo equivocado, sin ningún error visible.
+      huellaDeDatos: HuellaDelRegistro.resumirDatos(datos),
     );
 
     // Primero la baja de la anterior: si el registro nuevo falla a mitad, el
@@ -649,12 +1104,34 @@ class AkPush {
 
     var seRegistro = false;
 
+    // 🔴 LA HUELLA ES LA CONSTANCIA DE QUE EL SERVIDOR YA LO TIENE.
+    //
+    // `_registrado` vive en memoria y arranca en `false` en cada apertura de la
+    // aplicación; la huella vive en disco y sobrevive. Al segundo arranque el plan dice
+    // «no hace falta registrar, no cambió nada» —que es correcto y ahorra una llamada—
+    // pero nadie levantaba la bandera, y entonces:
+    //
+    //   · `puedeRecibir` daba `false` a alguien que sí puede recibir
+    //   · el motivo decía «no llegó a registrarse en el servidor», que es MENTIRA
+    //
+    // Visto en pantalla el 2026-08-31: «No puede recibir» sobre un teléfono registrado
+    // hacía tres minutos. Y cualquier comercio que use `puedeRecibir` para decidir qué
+    // mostrar, mostraba lo equivocado en cada arranque salvo el primero.
+    //
+    // Que el plan diga «no registrar» significa exactamente que el registro vigente
+    // sirve. Eso es estar registrado.
+    if (!plan.registrar && _huella != null && _token != null) {
+      _registrado = true;
+      _registradoEl ??= _huella!.cuando;
+    }
+
     if (plan.registrar || (plan.pedirPermiso && _token != null)) {
       try {
         await _registrarAhora(
           userId: userId,
           identity: identity,
           identityHash: identityHash,
+          datosDeLaPersona: datos,
           concedido: concedido,
           estado: estado,
         );
@@ -666,6 +1143,35 @@ class AkPush {
 
     _userId = userId;
     await _almacen.guardarUsuario(userId);
+
+    // ── LA UBICACIÓN, DESPUÉS DE TODO LO DEMÁS ────────────────────────────────────
+    //
+    // Acá y no antes, por tres razones que se pagan caro si se saltean:
+    //
+    //  1. El permiso de notificaciones ya está resuelto. Dos diálogos del sistema
+    //     seguidos es la forma más rápida de que la persona diga que no a los dos, y
+    //     el de notificaciones es el que el producto necesita.
+    //  2. El registro ya se hizo. Si el modal tarda —o la persona lo deja abierto—,
+    //     su teléfono ya quedó registrado y le pueden llegar avisos igual.
+    //  3. `_userId` ya está puesto, así que si acepta se puede mandar la primera
+    //     posición en el mismo acto.
+    //
+    // No se espera el resultado: el inicio de sesión de la aplicación no se queda
+    // colgado detrás de un modal que la persona puede dejar abierto un minuto.
+    unawaited(_ofrecerUbicacion(forzar: false));
+
+    // 🔴 Y A QUIEN YA DIO EL PERMISO, SE LE LEE LA POSICIÓN.
+    //
+    // Sin esta línea la ubicación se mandaba UNA sola vez en la vida —en el mismo
+    // instante de conceder el permiso— y nunca más. Si esa única vez fallaba, no había
+    // segunda: la persona figuraba con ubicación activa y cero posiciones para siempre.
+    // Fue exactamente lo que pasó el 2026-08-31 en un HONOR con el interruptor de
+    // ubicación apagado.
+    //
+    // El freno de seis horas vive adentro de `reportarSiCorresponde`, así que llamarlo
+    // en cada inicio de sesión no gasta batería ni multiplica lecturas: en la mayoría
+    // de las llamadas devuelve `false` sin tocar el GPS.
+    unawaited(_ubicacion.reportarSiCorresponde(userId));
 
     return ResultadoDeSesion(
       puedeRecibir: concedido && _token != null && _registrado,
@@ -688,16 +1194,21 @@ class AkPush {
     EstadoDelPermiso? estado,
     String? identity,
     String? identityHash,
+    Map<String, dynamic>? datosDeLaPersona,
   }) async {
     final datos = await DatosDelDispositivo.recolectar();
     final cuandoSePregunto = await _almacen.cuandoSePregunto();
 
     await _api!.registrarDispositivo(
+        // El mismo con el que se dio de alta la instalación: sin esto el servidor
+        // la identifica por el `deviceId` del aparato y crea una segunda.
+        instalacionId: await _almacen.leerOCrearInstalacionId(),
       userId: userId,
       token: _token!,
       plataforma: datos.plataforma,
       identity: identity,
       identityHash: identityHash,
+      datos: datosDeLaPersona,
       deviceInfo: datos.toJson(),
       permisoConcedido: concedido,
       estadoDelPermiso: (estado ?? _estado).name,
@@ -712,6 +1223,7 @@ class AkPush {
       token: _token!,
       permisoConcedido: concedido,
       cuando: _registradoEl!,
+      huellaDeDatos: HuellaDelRegistro.resumirDatos(datosDeLaPersona),
     );
     await _almacen.guardarHuella(_huella!.toJson());
   }
@@ -720,6 +1232,7 @@ class AkPush {
     required String userId,
     String? identityHash,
     String? identity,
+    Map<String, dynamic>? datos,
   }) async {
     _asegurarIniciado();
 
@@ -733,15 +1246,19 @@ class AkPush {
       return;
     }
 
-    final datos = await DatosDelDispositivo.recolectar();
+    final delAparato = await DatosDelDispositivo.recolectar();
 
     await _api!.registrarDispositivo(
+        // El mismo con el que se dio de alta la instalación: sin esto el servidor
+        // la identifica por el `deviceId` del aparato y crea una segunda.
+        instalacionId: await _almacen.leerOCrearInstalacionId(),
       userId: userId,
       token: _token!,
-      plataforma: datos.plataforma,
+      plataforma: delAparato.plataforma,
       identity: identity,
       identityHash: identityHash,
-      deviceInfo: datos.toJson(),
+      datos: datos,
+      deviceInfo: delAparato.toJson(),
       // El servicio filtra por esto antes de enviar. Reportar `true` cuando la
       // persona dijo que no significa pagar envíos a un teléfono que no va a
       // mostrar nada, e inflar la tasa de entrega con ellos.
@@ -800,7 +1317,7 @@ class AkPush {
     await _yo._api?.reportarEvento(pushLogId: id, accion: accion.valor);
   }
 
-  Future<Diagnostico> _diagnostico() => Diagnostico.reunir(
+  Future<Diagnostico> _diagnostico() async => (await Diagnostico.reunir(
         config: _config,
         configPedidaAlServidor: _configDelServidor,
         token: _token,
@@ -816,7 +1333,21 @@ class AkPush {
         // «permiso concedido» justo en el caso que más se reporta. El gestor sí
         // se reutiliza, para no volver a pagar la lectura del nivel de Android.
         gestorDePermiso: _permiso,
-      );
+      ))
+          // La ubicación se agrega después de reunir el resto: `reunir` es de este
+          // paquete pero no conoce el módulo de ubicación, y no tiene por qué —
+          // diagnosticar la mensajería y diagnosticar la ubicación son dos cosas.
+          //
+          // Sólo se agrega si el comercio la tiene activada: mostrar «sin ubicaciones»
+          // a quien nunca la pidió sería un problema inventado.
+          .conUbicacion(_politicaDeUbicacion.activa
+              ? EstadoDeUbicacion(
+                  permitida: await _ubicacion.concedido,
+                  servicioPrendido: await _ubicacion.servicioPrendido,
+                  ultimoEnvio: _ubicacion.ultimoEnvio,
+                  ultimoMotivo: _ubicacion.ultimoMotivo,
+                )
+              : null);
 
   // ── Lo que llega ────────────────────────────────────────────────────────
 
@@ -906,6 +1437,9 @@ class AkPush {
     final datos = await DatosDelDispositivo.recolectar();
     try {
       await _api?.registrarDispositivo(
+        // El mismo con el que se dio de alta la instalación: sin esto el servidor
+        // la identifica por el `deviceId` del aparato y crea una segunda.
+        instalacionId: await _almacen.leerOCrearInstalacionId(),
         userId: userId,
         token: nuevo,
         plataforma: datos.plataforma,

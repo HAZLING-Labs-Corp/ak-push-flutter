@@ -248,3 +248,109 @@ AccionDePermiso decidirQueHacer({
       ? AccionDePermiso.mostrarPreguntaBlanda
       : AccionDePermiso.pedirAlSistema;
 }
+
+
+/// LOS TEXTOS DEL MODAL DE UBICACIÓN, TAL COMO LOS ESCRIBIÓ EL COMERCIO
+///
+/// Vienen de `/api/v1/configuracion`. Si el comercio no escribió nada, valen los de
+/// abajo — que no son de relleno: están redactados para contestar las tres preguntas
+/// que alguien se hace antes de decir que sí (¿qué tan preciso?, ¿cuándo?, ¿lo puedo
+/// deshacer?), y las tres respuestas son verdad en este SDK.
+class TextosDeUbicacion {
+  const TextosDeUbicacion({
+    this.titulo = 'Avisos de tu zona',
+    this.cuerpo =
+        'Si nos dejás saber en qué zona estás, te escribimos sólo lo que pasa cerca '
+        'tuyo en vez de mandarte todo.',
+    this.aceptar = 'Compartir mi zona',
+    this.ahoraNo = 'Ahora no',
+    this.motivos = const [
+      'Es la zona, no la dirección exacta',
+      'Sólo mientras usás la aplicación',
+      'Lo cambiás cuando quieras desde los ajustes',
+    ],
+  });
+
+  final String titulo;
+  final String cuerpo;
+  final String aceptar;
+  final String ahoraNo;
+  final List<String> motivos;
+
+  /// Cada campo cae por separado en su valor por omisión.
+  ///
+  /// 🔴 A propósito: un comercio que sólo quiso cambiar el título no tiene por qué
+  /// quedarse sin los tres motivos. Si esto fuera «o todo lo del servidor o todo lo de
+  /// fábrica», el primero que edita una palabra se queda con el modal vacío.
+  factory TextosDeUbicacion.fromJson(Map<String, dynamic>? j) {
+    const d = TextosDeUbicacion();
+    if (j == null) return d;
+    String t(String k, String x) {
+      final v = j[k];
+      return (v is String && v.trim().isNotEmpty) ? v.trim() : x;
+    }
+    final m = j['motivos'];
+    return TextosDeUbicacion(
+      titulo: t('titulo', d.titulo),
+      cuerpo: t('cuerpo', d.cuerpo),
+      aceptar: t('aceptar', d.aceptar),
+      ahoraNo: t('ahoraNo', d.ahoraNo),
+      motivos: (m is List && m.isNotEmpty)
+          ? m.map((e) => '$e').where((e) => e.trim().isNotEmpty).toList()
+          : d.motivos,
+    );
+  }
+}
+
+/// SI SE LE OFRECE LA UBICACIÓN, CUÁNDO, Y CADA CUÁNTO SE REINSISTE.
+///
+/// Nace apagada. Un comercio que no la necesita no le muestra a su gente un diálogo
+/// de más, y prender esto sin querer es pedir un permiso que no hace falta.
+class PoliticaDeUbicacion {
+  const PoliticaDeUbicacion({
+    this.activa = false,
+    this.momento = MomentoDeUbicacion.despuesDeEntrar,
+    this.reintentarCadaDias = 14,
+    this.textos = const TextosDeUbicacion(),
+  });
+
+  final bool activa;
+  final MomentoDeUbicacion momento;
+
+  /// Cada cuántos días volver a ofrecerla a quien cerró el modal sin aceptar.
+  ///
+  /// 🔴 Esto NO reintenta contra quien le dijo que no al diálogo del SISTEMA: ese «no»
+  /// Android lo recuerda solo y ya no vuelve a mostrar nada. Reinsistir ahí sería
+  /// levantar un modal que no lleva a ninguna parte. Sólo se le vuelve a ofrecer a
+  /// quien todavía puede decir que sí.
+  final int reintentarCadaDias;
+  final TextosDeUbicacion textos;
+
+  factory PoliticaDeUbicacion.fromJson(Map<String, dynamic>? j) {
+    if (j == null) return const PoliticaDeUbicacion();
+    return PoliticaDeUbicacion(
+      activa: j['activa'] == true,
+      momento: j['momento'] == 'laAppDecide'
+          ? MomentoDeUbicacion.laAppDecide
+          : MomentoDeUbicacion.despuesDeEntrar,
+      reintentarCadaDias:
+          (j['reintentarCadaDias'] is num) ? (j['reintentarCadaDias'] as num).toInt() : 14,
+      textos: TextosDeUbicacion.fromJson(
+          j['textos'] is Map ? Map<String, dynamic>.from(j['textos'] as Map) : null),
+    );
+  }
+}
+
+enum MomentoDeUbicacion {
+  /// Al iniciar sesión, DESPUÉS de que se resolvió el permiso de notificaciones.
+  ///
+  /// 🔴 Nunca los dos diálogos juntos: dos permisos seguidos apenas se abre la
+  /// aplicación es la forma más rápida de que la persona diga que no a los dos, y el
+  /// de notificaciones es el que el producto necesita.
+  despuesDeEntrar,
+
+  /// La aplicación decide cuándo, llamando a `AkPush.ofrecerUbicacion(context)`.
+  /// Para quien quiera pedirla recién cuando sirve para algo — al abrir el mapa de
+  /// sucursales, por ejemplo, que es cuando más gente acepta.
+  laAppDecide,
+}
