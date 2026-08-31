@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show ValueListenable, VoidCallback;
+import 'package:flutter/material.dart' show BuildContext, GlobalKey, NavigatorState;
 
 import 'api_client.dart';
 import 'decision_de_dibujo.dart';
@@ -13,6 +14,8 @@ import 'permiso.dart';
 import 'consentimiento.dart';
 import 'politica.dart';
 import 'sesion.dart';
+import 'modal_de_ubicacion.dart';
+import 'ubicacion.dart';
 import 'presenter.dart';
 import 'push_message.dart';
 import 'remote_config.dart';
@@ -86,6 +89,8 @@ class AkPush {
   /// Lo que el comercio configuró. Hasta que el servicio sirva el campo, es la
   /// que reproduce el comportamiento de siempre.
   PoliticaDeNotificaciones _politica = PoliticaDeNotificaciones.comoEstabaAntes;
+  PoliticaDeUbicacion _politicaDeUbicacion = const PoliticaDeUbicacion();
+
 
   /// La última vez que se registró, para no repetir una llamada que no cambia
   /// nada — y para que la huella venza y se revalide sola.
@@ -96,6 +101,20 @@ class AkPush {
   Consentimiento _consentimiento = const Consentimiento();
 
   AkPushApi? _api;
+
+  /// Se arma junto con el cliente, en `init()`. Antes de eso no hay a quién
+  /// mandarle la posición.
+  Ubicacion? _ubicacionInterna;
+  Ubicacion get _ubicacion {
+    final u = _ubicacionInterna;
+    if (u == null) {
+      throw StateError(
+        'Hay que llamar a AkPush.init() antes de usar la ubicación: sin el '
+        'cliente no hay a dónde mandarla.',
+      );
+    }
+    return u;
+  }
   AkPushConfig? _config;
   final ConfigStore _almacen = ConfigStore();
 
@@ -277,6 +296,124 @@ class AkPush {
         datos: datos,
       );
 
+  // ── Dónde está la persona ────────────────────────────────────────────────
+
+  /// ¿Se le puede pedir la ubicación, o ya contestó?
+  ///
+  /// `false` cuando ya la concedió o cuando la denegó para siempre — en ese
+  /// último caso el diálogo del sistema ya no se muestra y sólo quedan los
+  /// Ajustes del teléfono.
+  static Future<bool> get sePuedePedirUbicacion => _yo._ubicacion.sePuedePreguntar;
+
+  /// ¿Está concedida?
+  static Future<bool> get tieneUbicacion => _yo._ubicacion.concedido;
+
+  /// Pide el permiso de ubicación aproximada.
+  ///
+  /// 🔴 NO SE LLAMA EN EL ARRANQUE. Dos diálogos del sistema seguidos —el de
+  /// notificaciones y éste— es la forma más rápida de que la persona diga que
+  /// no a los dos. Se pide cuando la aplicación ya explicó para qué sirve.
+  static Future<bool> pedirUbicacion() => _yo._ubicacion.pedir();
+
+  /// La política que configuró el comercio para la ubicación.
+  static PoliticaDeUbicacion get politicaDeUbicacion => _yo._politicaDeUbicacion;
+
+  /// LE OFRECE A LA PERSONA COMPARTIR SU ZONA, CON EL MODAL DEL SDK.
+  ///
+  /// Explica primero —con los textos que escribió el comercio— y recién si dice que
+  /// sí levanta el diálogo del sistema. Devuelve si quedó concedido.
+  ///
+  /// El SDK la llama solo al iniciar sesión cuando el comercio puso el momento en
+  /// «despuesDeEntrar». Esta versión pública es para el otro momento, «laAppDecide»:
+  /// ofrecerla recién cuando sirve para algo —al abrir el mapa de sucursales, por
+  /// ejemplo— que es cuando más gente acepta.
+  ///
+  /// `context` es opcional: si la aplicación pasó [navegador] al `MaterialApp`, el
+  /// SDK dibuja sin que le den ninguno.
+  static Future<bool> ofrecerUbicacion([BuildContext? context]) =>
+      _yo._ofrecerUbicacion(context: context, forzar: true);
+
+  /// El motor. `forzar` distingue las dos entradas:
+  ///
+  ///  - **la automática** (al iniciar sesión) respeta la política: no ofrece nada si
+  ///    el comercio la tiene apagada, si el momento es otro, o si se le ofreció hace
+  ///    menos de `reintentarCadaDias`.
+  ///  - **la que pide la aplicación** salta esas condiciones —ya decidió que es el
+  ///    momento— pero NO salta las dos que no dependen de nadie: que el permiso no
+  ///    esté ya concedido, y que el sistema todavía acepte mostrarlo.
+  Future<bool> _ofrecerUbicacion({
+    BuildContext? context,
+    required bool forzar,
+  }) async {
+    try {
+      // 🔴 Si ya está concedido no se pregunta de nuevo. Un modal que pide algo que
+      // la persona ya dio es la clase de detalle que hace que se desconfíe del resto.
+      if (await _ubicacion.concedido) return true;
+
+      // Y si el sistema ya no muestra el diálogo —dijo que no dos veces—, levantar el
+      // modal sería mentirle: acepta, no pasa nada, y no hay forma de explicarle por
+      // qué. Sólo le queda los Ajustes, y eso se ofrece en otro lado.
+      if (!await _ubicacion.sePuedePreguntar) return false;
+
+      if (!forzar) {
+        if (!_politicaDeUbicacion.activa) return false;
+        if (_politicaDeUbicacion.momento != MomentoDeUbicacion.despuesDeEntrar) {
+          return false;
+        }
+        final desde = await _almacen.desdeLaUltimaOfertaDeUbicacion();
+        if (desde != null &&
+            desde.inDays < _politicaDeUbicacion.reintentarCadaDias) {
+          return false;
+        }
+      }
+
+      // 🔴 Se toma el contexto DESPUÉS de los `await` de arriba, no antes. Entre que
+      // se consulta el permiso y se dibuja el modal la aplicación pudo cambiar de
+      // pantalla, y un contexto capturado antes apuntaría a algo que ya no existe:
+      // el modal no aparece, o aparece colgado de un árbol muerto.
+      // Se anota ANTES de mostrarlo, no después. Si se anotara al cerrar y la persona
+      // mata la aplicación con el modal abierto, en el próximo arranque lo ve otra
+      // vez, y otra, y otra. Preferimos perder una oferta a hostigar a alguien.
+      await _almacen.guardarOfertaDeUbicacion(DateTime.now());
+
+      // 🔴 El contexto se busca ACÁ, después del último `await`, y no antes. Entre
+      // consultar el permiso y dibujar, la aplicación pudo cambiar de pantalla: un
+      // contexto tomado más arriba apuntaría a un árbol que ya no existe, y el modal
+      // no aparecería nunca — sin ningún error que lo delate.
+      final ctx = context ?? navegador.currentContext;
+      if (ctx == null || !ctx.mounted) return false;
+
+      final quiere = await ModalDeUbicacion.mostrar(
+        ctx,
+        textos: _politicaDeUbicacion.textos,
+      );
+      if (!quiere) return false;
+
+      final concedido = await _ubicacion.pedir();
+      // Si aceptó, se manda la primera posición ya: sin esto la consola muestra a
+      // alguien «con ubicación activa» y cero posiciones hasta el próximo arranque,
+      // que parece roto aunque no lo esté.
+      if (concedido && _userId != null) {
+        await _ubicacion.reportarSiCorresponde(_userId!, forzar: true);
+      }
+      return concedido;
+    } catch (_) {
+      // Nunca tumba nada: perder una ubicación cuesta un dato de segmentación; que
+      // falle el inicio de sesión cuesta que esa persona no reciba nada.
+      return false;
+    }
+  }
+
+  /// Lee y manda dónde está, si hay permiso y si pasó el tiempo mínimo.
+  ///
+  /// Devuelve si mandó algo. Nunca lanza: perder una posición cuesta un dato de
+  /// segmentación; que falle el arranque cuesta que esa persona no reciba nada.
+  static Future<bool> reportarUbicacion({bool forzar = false}) async {
+    final u = _yo._userId;
+    if (u == null) return false;
+    return _yo._ubicacion.reportarSiCorresponde(u, forzar: forzar);
+  }
+
   /// Cierra el ciclo: da de baja el teléfono y limpia la barra de estado.
   static Future<void> alCerrarSesion() => _yo._logout();
 
@@ -305,6 +442,20 @@ class AkPush {
   ///
   /// [url] se configura en vez de quemarse, para poder apuntar a calidad o a
   /// producción sin publicar una versión nueva de la aplicación.
+  /// La llave del navegador de la aplicación, para que el SDK pueda levantar sus
+  /// propias pantallas.
+  ///
+  /// Se pasa una vez, en el `MaterialApp`:
+  ///
+  /// ```dart
+  /// MaterialApp(navigatorKey: AkPush.navegador, home: ...)
+  /// ```
+  ///
+  /// Con eso el SDK ya ofrece la ubicación solo, cuando el comercio lo activó desde
+  /// la consola. Sin eso todo lo demás sigue andando igual — sólo que la ubicación
+  /// hay que ofrecerla a mano con [ofrecerUbicacion].
+  static final GlobalKey<NavigatorState> navegador = GlobalKey<NavigatorState>();
+
   static Future<void> init({
     required String llave,
     String? url,
@@ -339,6 +490,7 @@ class AkPush {
           baseUrl ?? 'https://api-push.creditotal.online');
 
       _api = AkPushApi(apiKey: apiKey, baseUrl: urlNormalizada);
+      _ubicacionInterna = Ubicacion(_api!);
 
       // Para el isolate de segundo plano, que no ve nada de esto. Ver H-09.
       await _almacen.guardarCredencial(apiKey, urlNormalizada);
@@ -357,6 +509,7 @@ class AkPush {
       // El servidor manda. Si todavía no sirve el campo, `config.politica` es la
       // de siempre y no piso lo que declaró la aplicación.
       if (config.trajoPolitica) _politica = config.politica;
+      _politicaDeUbicacion = config.ubicacion;
 
       final cambio = cacheada != null && cacheada.version != config.version;
       if (cambio) {
@@ -686,6 +839,22 @@ class AkPush {
 
     _userId = userId;
     await _almacen.guardarUsuario(userId);
+
+    // ── LA UBICACIÓN, DESPUÉS DE TODO LO DEMÁS ────────────────────────────────────
+    //
+    // Acá y no antes, por tres razones que se pagan caro si se saltean:
+    //
+    //  1. El permiso de notificaciones ya está resuelto. Dos diálogos del sistema
+    //     seguidos es la forma más rápida de que la persona diga que no a los dos, y
+    //     el de notificaciones es el que el producto necesita.
+    //  2. El registro ya se hizo. Si el modal tarda —o la persona lo deja abierto—,
+    //     su teléfono ya quedó registrado y le pueden llegar avisos igual.
+    //  3. `_userId` ya está puesto, así que si acepta se puede mandar la primera
+    //     posición en el mismo acto.
+    //
+    // No se espera el resultado: el inicio de sesión de la aplicación no se queda
+    // colgado detrás de un modal que la persona puede dejar abierto un minuto.
+    unawaited(_ofrecerUbicacion(forzar: false));
 
     return ResultadoDeSesion(
       puedeRecibir: concedido && _token != null && _registrado,

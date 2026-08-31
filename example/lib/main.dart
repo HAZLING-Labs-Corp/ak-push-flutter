@@ -146,6 +146,12 @@ class _PantallaState extends State<Pantalla> {
     }
   }
 
+
+  /// Pide la ubicación y manda la posición.
+  ///
+  /// Primero se explica para qué sirve y recién después sale el diálogo del
+  /// sistema: el permiso que se pide sin explicar es el que se deniega, y en
+  /// Android un «no» al de ubicación tampoco se vuelve a preguntar solo.
   Future<void> _preguntaBlanda() async {
     final t = AkPush.politica.textos;
     final si = await showDialog<bool>(
@@ -275,6 +281,18 @@ class _PantallaState extends State<Pantalla> {
               ),
             ),
           ]),
+          // ── La ubicación la ofrece el SDK, no esta pantalla ─────────────
+          //
+          // 🔴 Acá NO hay ningún botón, y es a propósito: este archivo es el ejemplo
+          // de lo que un comercio tiene que escribir para usar el SDK, y la respuesta
+          // es «nada». El SDK levanta su propio modal al iniciar sesión —con los textos
+          // que ese comercio configuró en la consola— siempre que le hayan prestado el
+          // `navigatorKey` al `MaterialApp`, que es la única línea que hace falta.
+          //
+          // Si un comercio prefiere ofrecerla en otro momento —al abrir el mapa de
+          // sucursales, digamos, que es cuando más gente acepta— pone el momento en
+          // «laAppDecide» desde la consola y llama a `AkPush.ofrecerUbicacion(context)`
+          // donde quiera.
           const SizedBox(height: 20),
           Text('Bitácora', style: t.textTheme.labelMedium),
           const Divider(),

@@ -1,4 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 🔴 ESTE RENGLÓN LO PONE CADA COMERCIO, y no puede venir del paquete.
+         Android exige que sea la APLICACIÓN la que declare qué precisión quiere, y eso
+         es una decisión de producto: `COARSE` es la zona —la acepta ~40% de la gente— y
+         `FINE` es la posición exacta, que acepta ~25% y obliga a declararla aparte en
+         Play Console. El paquete no puede elegir por el comercio.
+
+         Sin este renglón, `AkPush.pedirUbicacion()` no muestra ningún diálogo: el sistema
+         niega el permiso sin preguntar, y no hay error que lo explique. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+
     <!-- Android 13+ pide el permiso en tiempo de ejecución. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application

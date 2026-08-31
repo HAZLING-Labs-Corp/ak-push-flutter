@@ -714,3 +714,35 @@ diagnóstico, y la baja al cerrar sesión.
 | **La bandeja** | Ver dentro de la app lo que llegó. Espera al servicio |
 | **iOS** | Necesita Mac, teléfono físico y la clave de APNs del comercio |
 | **Idempotencia** | El paquete de envío manda la clave; el servicio todavía no la hace cumplir |
+
+## Si querés ubicación
+
+El paquete la pide, la lee y la manda. Lo único que agrega el comercio es **un renglón** en
+`android/app/src/main/AndroidManifest.xml`:
+
+```xml
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+```
+
+🔴 **Ese renglón no puede venir del paquete**, y conviene entender por qué: Android exige que
+sea la aplicación la que declare qué precisión quiere, y esa es una decisión de producto.
+`COARSE` es la zona y la acepta cerca del 40% de la gente; `FINE` es la posición exacta, la
+acepta el 25% y además obliga a declararla aparte en Play Console. El paquete no puede elegir
+eso por el comercio.
+
+Sin el renglón, `pedirUbicacion()` no muestra ningún diálogo: el sistema niega el permiso sin
+preguntar y no hay error que lo explique.
+
+Después, todo lo demás es del paquete:
+
+```dart
+if (await AkPush.sePuedePedirUbicacion) {
+  // Tu pantalla explicando para qué sirve, con tu voz.
+  if (loAcepta) await AkPush.pedirUbicacion();
+}
+
+await AkPush.reportarUbicacion();   // lee y manda, con freno de 6 horas
+```
+
+Se piden **la zona, no la puerta**, se guardan las últimas 5 posiciones y se descartan a los
+90 días.

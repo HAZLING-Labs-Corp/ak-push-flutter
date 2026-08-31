@@ -39,6 +39,7 @@ dependencies:
   # si no se puede leer, el alta sigue igual.
   device_info_plus: ^10.1.2
   package_info_plus: ^8.1.2
+  geolocator: ^14.0.2
 
 dev_dependencies:
   flutter_test:

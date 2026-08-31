@@ -1,3 +1,6 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -14,6 +17,24 @@ plugins {
 // el ejemplo — y el que no lea el README se topa con un 409 que no explica nada.
 val paqueteDeLaApp = (project.findProperty("paquete") as String?)
     ?: "com.juanpush.android1"
+
+// 🔴 LA FIRMA DE RELEASE.
+//
+// Un APK de release firmado con la llave de DEPURACIÓN se instala en un emulador y se
+// atasca en un teléfono de verdad: Play Protect lo bloquea con «no se pudo instalar», sin
+// decir por qué. Eso pasó, y perdió una tarde.
+//
+// La llave vive fuera del repositorio, en `android/key.properties`, que está ignorado: una
+// llave de firma en git es una llave que cualquiera con el repositorio puede usar para
+// publicar algo con TU identidad de aplicación.
+//
+// Si el archivo no está, se sigue firmando con la de depuración y se avisa al compilar —
+// en vez de fallar la construcción de alguien que sólo quiere correr el ejemplo.
+val propiedadesDeFirma = Properties().apply {
+    val f = rootProject.file("key.properties")
+    if (f.exists()) FileInputStream(f).use { load(it) }
+}
+val hayFirmaPropia = propiedadesDeFirma.getProperty("storeFile") != null
 
 android {
     namespace = paqueteDeLaApp
@@ -44,11 +65,42 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            if (hayFirmaPropia) {
+                keyAlias = propiedadesDeFirma.getProperty("keyAlias")
+                keyPassword = propiedadesDeFirma.getProperty("keyPassword")
+                storeFile = file(propiedadesDeFirma.getProperty("storeFile"))
+                storePassword = propiedadesDeFirma.getProperty("storePassword")
+
+                // 🔴 LOS TRES ESQUEMAS DE FIRMA, Y ESPECIALMENTE EL v1.
+                //
+                // Con `minSdk 24` Android Gradle apaga el v1 (JAR) por su cuenta: da por
+                // hecho que todo lo que corre Android 7 o más entiende el v2. No es cierto
+                // para los instaladores de varios fabricantes —Xiaomi, Huawei, Samsung con
+                // versiones viejas— que siguen exigiendo el v1 y rechazan el paquete con un
+                // «no se pudo instalar la aplicación» que no dice nada más.
+                //
+                // Se instala perfecto en un emulador y falla en un teléfono de verdad, que
+                // es la peor forma de fallar: parece que el APK está bien.
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hayFirmaPropia) {
+                signingConfigs.getByName("release")
+            } else {
+                logger.warn("⚠️  Sin android/key.properties: el APK de release va firmado " +
+                    "con la llave de DEPURACIÓN y un teléfono real puede negarse a instalarlo.")
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }

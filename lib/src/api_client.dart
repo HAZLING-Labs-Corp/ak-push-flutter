@@ -131,6 +131,22 @@ class AkPushApi {
         ));
   }
 
+  /// Dónde está esta persona.
+  ///
+  /// Va aparte del registro del dispositivo y no dentro: la posición cambia
+  /// mucho más seguido que el teléfono, y meterla en el alta obligaría a
+  /// re-registrar el dispositivo entero cada vez que alguien se mueve.
+  Future<void> reportarUbicacion({
+    required String userId,
+    required Map<String, dynamic> posicion,
+  }) async {
+    await _pedir(() => _cliente.post(
+          Uri.parse('$baseUrl/api/v1/ubicacion'),
+          headers: _cabeceras,
+          body: jsonEncode({'userId': userId, 'posiciones': [posicion]}),
+        ));
+  }
+
   /// Da de baja este dispositivo.
   ///
   /// Es lo que evita que un teléfono que cambia de manos —vendido, prestado,

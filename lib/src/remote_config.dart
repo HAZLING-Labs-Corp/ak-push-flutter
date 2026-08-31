@@ -22,6 +22,7 @@ class AkPushConfig {
     required this.version,
     this.comercio,
     this.politica = PoliticaDeNotificaciones.comoEstabaAntes,
+    this.ubicacion = const PoliticaDeUbicacion(),
     this.trajoPolitica = false,
   });
 
@@ -56,6 +57,11 @@ class AkPushConfig {
   /// comercio configure algo.
   final PoliticaDeNotificaciones politica;
 
+  /// Si se le ofrece a la persona compartir su zona, y con qué palabras. Si el servidor
+  /// no la manda —una versión vieja del servicio—, queda apagada: nunca se pide un
+  /// permiso porque un campo faltó.
+  final PoliticaDeUbicacion ubicacion;
+
   /// Si la política vino del servidor o es la de siempre porque el campo todavía
   /// no existe. Sirve para no pisar la que declaró la aplicación.
   final bool trajoPolitica;
@@ -72,6 +78,11 @@ class AkPushConfig {
       version: '${json['version'] ?? ''}',
       comercio: json['comercio'] as String?,
       trajoPolitica: json['politica'] is Map,
+      ubicacion: PoliticaDeUbicacion.fromJson(
+        json['ubicacion'] is Map
+            ? (json['ubicacion'] as Map).cast<String, dynamic>()
+            : null,
+      ),
       politica: PoliticaDeNotificaciones.fromJson(
         json['politica'] is Map
             ? (json['politica'] as Map).cast<String, dynamic>()
@@ -109,6 +120,15 @@ class ConfigStore {
   static const _clavePregunta = 'akpush.ultimaPregunta';
   static const _claveConsentimiento = 'akpush.consentimiento';
   static const _claveCredencial = 'akpush.credencial';
+
+  /// Cuándo se le OFRECIÓ la ubicación por última vez.
+  ///
+  /// 🔴 Es distinto de cuándo se le pidió el permiso del sistema, y por eso tiene su
+  /// propia clave. La oferta es nuestra —el modal— y la controla la política del
+  /// comercio; el permiso lo controla Android y su «no» es definitivo. Mezclarlas en
+  /// una sola fecha haría que reinsistir con notificaciones apagara la ubicación, o
+  /// al revés.
+  static const _claveOfertaUbicacion = 'akpush.ofertaUbicacion';
 
   Future<AkPushConfig?> leer() async {
     final prefs = await SharedPreferences.getInstance();
@@ -171,6 +191,18 @@ class ConfigStore {
     final crudo =
         (await SharedPreferences.getInstance()).getString(_clavePregunta);
     return crudo == null ? null : DateTime.tryParse(crudo);
+  }
+
+  Future<void> guardarOfertaDeUbicacion(DateTime cuando) async =>
+      (await SharedPreferences.getInstance())
+          .setString(_claveOfertaUbicacion, cuando.toIso8601String());
+
+  /// Cuánto pasó desde la última vez que se le ofreció. `null` = nunca se le ofreció.
+  Future<Duration?> desdeLaUltimaOfertaDeUbicacion() async {
+    final crudo =
+        (await SharedPreferences.getInstance()).getString(_claveOfertaUbicacion);
+    final cuando = crudo == null ? null : DateTime.tryParse(crudo);
+    return cuando == null ? null : DateTime.now().difference(cuando);
   }
 
   Future<Duration?> desdeLaUltimaPregunta() async {
