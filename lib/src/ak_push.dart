@@ -183,18 +183,6 @@ class AkPush {
   /// Qué se le preguntó a esta persona y qué contestó.
   static Consentimiento get consentimiento => _yo._consentimiento;
 
-  /// De qué comercio es esta aplicación, **según el servicio**.
-  ///
-  /// No hace falta configurarlo: el comercio sale de la llave, y la
-  /// configuración lo devuelve. Sirve para diagnosticar y para mostrar en un
-  /// registro contra cuál se está trabajando — que es la confusión real de quien
-  /// administra tres comercios con tres llaves parecidas.
-  ///
-  /// 🔴 **No se usa como declaración.** Repetirle al servicio lo que él mismo
-  /// acaba de contestar no comprueba nada: la guarda de `X-Comercio` sólo vale
-  /// si la aplicación declara algo que sabe por su cuenta.
-  static String? get comercio => _yo._config?.comercio;
-
   /// La aplicación avisa qué contestó la persona **en su propio modal**.
   ///
   /// Hay que llamarlo en los dos casos, no sólo cuando acepta: un «ahora no»
@@ -260,24 +248,24 @@ class AkPush {
   /// que se lleva ahí no se recupera nunca más. Poniéndolo en `false`, `init()`
   /// sólo **lee** el permiso y la aplicación decide cuándo pedirlo con
   /// [pedirPermiso], después de su propia pantalla que explica para qué sirve.
-  /// Arranca el SDK. Dos valores, y ninguno más.
+  /// Arranca el SDK. Son tres valores, y ninguno más.
   ///
-  /// [llave] es lo único que hay que cuidar, y es **lo que decide de qué
-  /// comercio es cada llamada**: el comercio no se configura porque no hace
-  /// falta — sale de la llave, del lado del servicio, y la configuración lo
-  /// devuelve. Pedirlo aparte sería pedir un dato que el sistema ya sabe, con
-  /// el riesgo de que alguien lo escriba distinto.
-  ///
-  /// [url] se configura en vez de quemarse, para poder apuntar a calidad o a
-  /// producción sin publicar una versión nueva de la aplicación.
+  /// [llave] es lo único secreto de los tres, y es lo que decide de qué comercio
+  /// es cada llamada. [comercio] no da acceso: sirve para que una llave mal
+  /// pegada **falle en el arranque** en vez de registrar a esta gente en otro
+  /// comercio y mandarle avisos a los clientes de un tercero. Y [url] se
+  /// configura en vez de quemarse, para poder apuntar a calidad o a producción
+  /// sin publicar una versión nueva de la aplicación.
   static Future<void> init({
     required String llave,
+    String? comercio,
     String? url,
     bool pedirPermisoAlIniciar = true,
     PoliticaDeNotificaciones? politicaPorDefecto,
   }) =>
       _yo._init(
         apiKey: llave,
+        comercio: comercio,
         baseUrl: url,
         pedirPermisoAlIniciar: pedirPermisoAlIniciar,
         politicaPorDefecto: politicaPorDefecto,
@@ -285,6 +273,7 @@ class AkPush {
 
   Future<void> _init({
     required String apiKey,
+    String? comercio,
     String? baseUrl,
     bool pedirPermisoAlIniciar = true,
     PoliticaDeNotificaciones? politicaPorDefecto,
@@ -302,6 +291,7 @@ class AkPush {
 
       _api = AkPushApi(
         apiKey: apiKey,
+        comercio: comercio,
         baseUrl: AkPushApi.normalizarUrl(
             baseUrl ?? 'https://api-push.creditotal.online'),
       );

@@ -5,14 +5,10 @@ completo y para probar contra un servicio de verdad.
 
 ```bash
 flutter run \
-  --dart-define=AKPUSH_KEY=pk_live_… \
+  --dart-define=AKPUSH_KEY=pk_live_…   \
+  --dart-define=AKPUSH_COMERCIO=tu_comercio \
   --dart-define=AKPUSH_URL=http://10.0.2.2:3085/api/v1
 ```
-
-Dos variables, y ninguna es secreta: la llave de la aplicación va adentro del
-APK y cualquiera que lo descomprima la lee — por eso tiene alcance
-`devices:write` y **no puede enviar**. El comercio no se configura: sale de la
-llave.
 
 `10.0.2.2` es cómo un emulador de Android alcanza el localhost de la máquina que
 lo hospeda. Desde un teléfono real en la misma red, la IP de la máquina.
@@ -26,7 +22,8 @@ tu comercio: con otro devuelve un 409 explicando el desacuerdo. Así que el
 ejemplo tiene que compilarse con **el tuyo**, y se pasa al compilar:
 
 ```bash
-flutter run -Ppaquete=com.tuempresa.app --dart-define=AKPUSH_KEY=…
+flutter run -Ppaquete=com.tuempresa.app \
+  --dart-define=AKPUSH_KEY=… --dart-define=AKPUSH_COMERCIO=…
 ```
 
 **No hay ningún archivo que editar.** Lo único que falta es registrar ese paquete

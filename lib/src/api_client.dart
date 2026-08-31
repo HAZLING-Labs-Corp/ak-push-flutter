@@ -17,6 +17,7 @@ class AkPushApi {
   AkPushApi({
     required this.apiKey,
     required this.baseUrl,
+    this.comercio,
     http.Client? cliente,
     this.timeout = const Duration(seconds: 10),
   }) : _cliente = cliente ?? http.Client();
@@ -44,15 +45,24 @@ class AkPushApi {
   /// nada a «la dirección tiene el prefijo dos veces».
   final String baseUrl;
 
+  /// El comercio que la aplicación DICE ser.
+  ///
+  /// No es lo que da acceso —eso es la llave— y por eso no es secreto: puede
+  /// leerse dentro de la aplicación sin problema. Sirve para otra cosa, y es la
+  /// que importa: **si alguien pega la llave de otro comercio, la llamada falla
+  /// en el arranque** en vez de registrar a esta gente en la casa de al lado y
+  /// mandarle avisos a los clientes de otro.
+  ///
+  /// Es el mismo tipo de guarda que la validación del paquete en la
+  /// configuración: fallar fuerte y temprano en vez de andar callado y mal.
+  final String? comercio;
   final Duration timeout;
   final http.Client _cliente;
 
   Map<String, String> get _cabeceras => {
         'content-type': 'application/json',
-        // El comercio NO se declara: sale de la llave, del lado del servicio.
-        // Declararlo repitiendo lo que el servicio contestó no comprueba nada, y
-        // pedirlo por configuración es pedir un dato que el sistema ya sabe.
         'authorization': 'Bearer $apiKey',
+        if (comercio != null) 'X-Comercio': comercio!,
       };
 
   /// Pide la configuración que le toca a esta aplicación.
