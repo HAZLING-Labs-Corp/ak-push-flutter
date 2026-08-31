@@ -11,17 +11,22 @@ dependencies:
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AkPush.init(
-    llave:    'pk_live_…',              // la llave con alcance devices:write
-    comercio: 'acme',                   // tu identificador de comercio
-    url:      'https://…/api/v1',
+    llave: 'pk_live_…',              // la llave con alcance devices:write
+    url:   'https://…/api/v1',
   );
   runApp(const MiApp());
 }
 ```
 
-Los tres valores son los mismos que te muestra la consola. **La llave es lo único
-secreto de los tres** — el comercio no da acceso: sirve para que una llave mal
-pegada falle en el arranque en vez de mandarle avisos a los clientes de otro.
+**Dos valores.** El comercio no se configura: **sale de la llave**, del lado del
+servicio. Pedírtelo aparte sería pedirte un dato que el sistema ya sabe, con el
+único efecto de que alguien lo escriba distinto.
+
+Si querés saber contra cuál estás trabajando, la configuración lo dice:
+
+```dart
+AkPush.comercio   // 'acme'
+```
 
 ⚠️ Así como está, `init()` le pide el permiso de notificaciones a la persona en
 el arranque. **Casi siempre conviene lo contrario.** Antes de publicar, leé
@@ -105,7 +110,7 @@ Mientras el servicio no sirva la política, podés declararla vos:
 
 ```dart
 await AkPush.init(
-  llave: '…', comercio: '…',
+  llave: '…',
   politicaPorDefecto: const PoliticaDeNotificaciones(
     momento: MomentoDelPermiso.login,
     preguntaBlanda: true,
@@ -261,10 +266,7 @@ Al arrancar, no pidas nada. `init()` solo lee lo que ya haya:
 ```dart
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AkPush.init(
-    llave: 'pk_live_…', comercio: 'acme',
-    pedirPermisoAlIniciar: false,
-  );
+  await AkPush.init(llave: 'pk_live_…', pedirPermisoAlIniciar: false);
   runApp(const MiApp());
 }
 ```
