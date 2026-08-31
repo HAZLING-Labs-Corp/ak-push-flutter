@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:ak_push/ak_push.dart';
+import 'package:hz_collection_sdk/hz_collection_sdk.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 
@@ -49,7 +49,7 @@ class DemoApp extends StatelessWidget {
         // configuró en la consola. Sin esta línea todo lo demás anda igual, pero el
         // modal no tiene dónde dibujarse y no aparece.
         navigatorKey: AkPush.navegador,
-        title: 'ak_push',
+        title: 'Collection',
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2D5F8A)),
           useMaterial3: true,
@@ -112,9 +112,17 @@ class _PantallaState extends State<Pantalla> {
     try {
       final r = await AkPush.alIniciarSesion(
         userId: p.userId,
-        // La cédula. Es lo que le permite a un sistema de afuera pedir un envío sin
-        // conocer el `userId` interno del comercio — que no tiene por qué conocer.
-        identity: p.cedula,
+        // Es una empresa, o una persona natural — para las dos empresas del
+        // juego de prueba esto sale en `TipoDeSujeto.juridica`.
+        tipo: p.tipo,
+        // El documento. Es lo que le permite a un sistema de afuera pedir un envío
+        // sin conocer el `userId` interno del comercio — que no tiene por qué
+        // conocer. Reemplaza a la vieja `identity`: ahora declara también la CLASE
+        // (cédula, RIF, pasaporte), no sólo el número.
+        documento: p.documento,
+        // La organización a la que pertenece, si tiene una — los dos empleados de
+        // proveedor del juego de prueba la traen puesta.
+        organizacion: p.organizacion,
         identityHash: _firmarComoLoHariaElBackend(p.userId),
         // 🔴 LO QUE EL COMERCIO SABE DE ESTA PERSONA, y que el servicio no puede
         // inventar. Sin esto la consola muestra `u_9000` y nada más: no se puede
@@ -220,7 +228,7 @@ class _PantallaState extends State<Pantalla> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ak_push'),
+        title: const Text('Collection'),
         backgroundColor: t.colorScheme.inversePrimary,
         actions: [
           // 🔴 LA CAMPANITA — una línea, y viene hecha del SDK.
@@ -257,8 +265,17 @@ class _PantallaState extends State<Pantalla> {
                     const SizedBox(height: 10),
                     Text('${_dentro!.usuario} · ${_dentro!.nombre}',
                         style: t.textTheme.titleMedium),
-                    Text('${_dentro!.cedula} · ${_dentro!.sucursal} · ${_dentro!.plan}',
+                    Text(
+                        '${_dentro!.tipo == TipoDeSujeto.juridica ? "RIF" : "cédula"} '
+                        '${_dentro!.cedula} · ${_dentro!.sucursal} · ${_dentro!.plan}',
                         style: t.textTheme.bodySmall),
+                    // Sólo aparece para los empleados de proveedor del juego de
+                    // prueba: es lo que demuestra que el sujeto PERTENECE a la
+                    // organización sin dejar de ser él mismo.
+                    if (_dentro!.organizacion != null)
+                      Text('de ${_dentro!.organizacion}',
+                          style: t.textTheme.bodySmall
+                              ?.copyWith(fontStyle: FontStyle.italic)),
                   ],
                   if (r != null) ...[
                     const SizedBox(height: 12),
@@ -341,16 +358,24 @@ class _Selector extends StatefulWidget {
 class _SelectorState extends State<_Selector> {
   String _texto = '';
 
+  // Las cien más los cuatro casos de identidad —dos empresas con RIF, dos
+  // empleados de un proveedor—, para que los cuatro sean seleccionables acá.
+  // Van al principio: son los que hay que poder encontrar sin escribir nada.
+  static const _todas = <PersonaDePrueba>[
+    ...casosDeIdentidadDePrueba,
+    ...cienPersonas,
+  ];
+
   @override
   Widget build(BuildContext context) {
     // Se busca por las tres vías a la vez y se juntan sin repetir: por nombre
-    // —que es un atributo—, por cédula —que es un alias— y por usuario.
+    // —que es un atributo—, por cédula/RIF —que es un alias— y por usuario.
     final lista = _texto.isEmpty
-        ? cienPersonas
+        ? _todas
         : <PersonaDePrueba>{
-            ...buscarPorNombre(_texto),
-            if (porCedula(_texto) != null) porCedula(_texto)!,
-            ...cienPersonas.where((p) => p.usuario.contains(_texto)),
+            ..._todas.where((p) => p.nombre.toLowerCase().contains(_texto.toLowerCase())),
+            ..._todas.where((p) => p.cedula == _texto),
+            ..._todas.where((p) => p.usuario.contains(_texto)),
           }.toList();
 
     return DraggableScrollableSheet(
@@ -376,9 +401,17 @@ class _SelectorState extends State<_Selector> {
               itemCount: lista.length,
               itemBuilder: (c, i) {
                 final p = lista[i];
+                // Los cuatro casos de identidad se marcan acá para poder
+                // encontrarlos de un vistazo entre las cien: RIF para las
+                // empresas, y la organización para los empleados de proveedor.
+                final marca = p.tipo == TipoDeSujeto.juridica
+                    ? ' · RIF ${p.cedula}'
+                    : p.organizacion != null
+                        ? ' · ${p.organizacion!.nombre ?? p.organizacion!.codigo}'
+                        : '';
                 return ListTile(
                   dense: true,
-                  title: Text('${p.usuario} · ${p.nombre}'),
+                  title: Text('${p.usuario} · ${p.nombre}$marca'),
                   subtitle: Text('${p.cedula} · ${p.sucursal} · ${p.plan}'),
                   onTap: () => Navigator.pop(c, p),
                 );

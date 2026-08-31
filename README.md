@@ -1,10 +1,10 @@
-# ak_push
+# hz_collection_sdk
 
 Recibir notificaciones push con una llave y una línea.
 
 ```yaml
 dependencies:
-  ak_push: ^0.1.0
+  hz_collection_sdk: ^0.1.0
 ```
 
 ```dart

@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import 'errors.dart';
 import 'remote_config.dart';
+import 'sujeto.dart';
 
 /// Cliente de las rutas del servicio.
 ///
@@ -71,11 +72,84 @@ class AkPushApi {
     return AkPushConfig.fromJson(json);
   }
 
-  /// Da de alta este dispositivo para esta persona.
+  /// Da de alta —o actualiza— EL APARATO. Nace apenas arranca la aplicación,
+  /// **sin token y sin sujeto**: todavía no se pidió permiso y todavía no
+  /// entró nadie. El sujeto lo enlaza después, al iniciar sesión — ver
+  /// [registrarSujeto].
+  ///
+  /// Es upsert por [instalacionId], que genera y persiste el propio SDK — ver
+  /// `ConfigStore.leerOCrearInstalacionId`. Llamarlo de nuevo en cada arranque
+  /// no duplica nada: actualiza el mismo aparato.
+  Future<void> registrarInstalacion({
+    required String instalacionId,
+    required Map<String, dynamic> aparato,
+    String? sujetoId,
+  }) async {
+    await _pedir(() => _cliente.post(
+          Uri.parse('$baseUrl/api/v1/instalaciones'),
+          headers: _cabeceras,
+          body: jsonEncode({
+            'instalacionId': instalacionId,
+            'aparato': aparato,
+            if (sujetoId != null) 'sujetoId': sujetoId,
+          }),
+        ));
+  }
+
+  /// Da de alta —o actualiza— EL SUJETO: quien se loguea.
+  ///
+  /// Es la raíz del modelo nuevo, y por eso se llama al iniciar sesión, ANTES
+  /// de tocar ningún permiso — ver la nota grande en `AkPush.alIniciarSesion`.
+  /// Es lo que hace que una persona exista para el sistema aunque conteste que
+  /// no a los avisos: antes de esto, un «no» temprano la dejaba invisible.
+  ///
+  /// Si viene [instalacionId], el servidor enlaza esa instalación a este
+  /// sujeto — y desenlaza la que tenía antes, si era otra.
+  Future<void> registrarSujeto({
+    required String sujetoId,
+    required TipoDeSujeto tipo,
+    Documento? documento,
+    Organizacion? organizacion,
+    Map<String, dynamic>? datos,
+    String? instalacionId,
+  }) async {
+    await _pedir(() => _cliente.post(
+          Uri.parse('$baseUrl/api/v1/sujetos'),
+          headers: _cabeceras,
+          body: jsonEncode({
+            'sujetoId': sujetoId,
+            'tipo': tipo.valor,
+            if (documento != null) 'documento': documento.toJson(),
+            if (organizacion != null) 'organizacion': organizacion.toJson(),
+            if (datos != null && datos.isNotEmpty) 'datos': datos,
+            if (instalacionId != null) 'instalacionId': instalacionId,
+          }),
+        ));
+  }
+
+  /// Actualiza el MÓDULO DE AVISOS de esta instalación: el token de FCM, si
+  /// hay permiso, y qué se le preguntó.
+  ///
+  /// 🔴 Hasta el rediseño, esto ERA el alta de la persona — el token era la
+  /// raíz. Ahora la raíz es el sujeto ([registrarSujeto]) y esto sólo carga
+  /// el módulo `avisos` de la instalación que ya existe. La URL no cambió —
+  /// sigue siendo `/api/v1/dispositivos`— porque del lado del servidor quedó
+  /// como un alias en desuso que traduce al formato nuevo, para que una
+  /// aplicación ya instalada no se rompa entre despliegues.
   Future<void> registrarDispositivo({
     required String userId,
     required String token,
     required String plataforma,
+    /// 🔴 EL MISMO QUE SE USÓ AL DAR DE ALTA LA INSTALACIÓN.
+    ///
+    /// Sin esto el servidor no puede saber que este token es del aparato que ya
+    /// registró, y cae al camino viejo: identifica la instalación por el `deviceId`
+    /// del aparato y **crea una segunda**. Medido el 2026-08-31 contra una base
+    /// limpia: una persona, un teléfono, dos instalaciones.
+    ///
+    /// Es opcional sólo para no romper a quien llame este método sin él; el SDK
+    /// siempre lo manda.
+    String? instalacionId,
     String? identity,
     String? identityHash,
     /// Lo que el comercio sabe de esta persona: nombre, sucursal, plan, lo que sea.
@@ -90,6 +164,7 @@ class AkPushApi {
           Uri.parse('$baseUrl/api/v1/dispositivos'),
           headers: _cabeceras,
           body: jsonEncode({
+            if (instalacionId != null) 'instalacionId': instalacionId,
             'userId': userId,
             'token': token,
             'platform': plataforma,

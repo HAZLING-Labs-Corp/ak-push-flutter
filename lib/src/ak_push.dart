@@ -22,6 +22,7 @@ import 'presenter.dart';
 import 'push_message.dart';
 import 'remote_config.dart';
 import 'ruta.dart';
+import 'sujeto.dart';
 
 /// Manejador de segundo plano.
 ///
@@ -254,6 +255,15 @@ class AkPush {
   /// si la aplicación declara algo que sabe por su cuenta.
   static String? get comercio => _yo._config?.comercio;
 
+  /// El catálogo de módulos que el servidor tiene para este comercio —
+  /// `avisos`, `ubicacion`, y los que estén sólo `declarado`s—, con la clave
+  /// siendo el nombre del módulo.
+  ///
+  /// Es sólo lectura: el paquete no construye nada a partir de esto. Sirve
+  /// para que la aplicación pueda mostrar, por ejemplo, qué le falta activar a
+  /// este comercio, sin tener que conocer el catálogo de memoria.
+  static Map<String, InfoDeModulo> get modulos => _yo._config?.modulos ?? const {};
+
   /// La aplicación avisa qué contestó la persona **en su propio modal**.
   ///
   /// Hay que llamarlo en los dos casos, no sólo cuando acepta: un «ahora no»
@@ -284,26 +294,60 @@ class AkPush {
 
   // ── El ciclo de sesión ──────────────────────────────────────────────────
 
-  /// Deja este teléfono en orden para esta persona: da de baja a la anterior si
-  /// era otra, resuelve el permiso según lo que configuró el comercio, y
-  /// registra sólo si hace falta.
+  /// Deja este teléfono en orden para esta persona: da de alta al SUJETO, da
+  /// de baja a la anterior si era otra, resuelve el permiso según lo que
+  /// configuró el comercio, y registra el módulo de avisos sólo si hace falta.
   ///
   /// Es lo que hay que llamar al iniciar sesión. Devuelve el resumen de cómo
   /// quedó, que es lo que la aplicación necesita para decidir qué mostrar.
+  ///
+  /// [tipo] si el sujeto es una persona natural o jurídica (empresa). Por
+  /// omisión, natural.
+  ///
+  /// [documento] su documento de identidad —cédula, RIF, pasaporte—. Es lo que
+  /// permite que un sistema de afuera pida un envío por cédula sin conocer el
+  /// [userId] interno del comercio.
+  ///
+  /// [organizacion] la organización a la que PERTENECE, si tiene una —por
+  /// ejemplo, un empleado de un proveedor—. No reemplaza al sujeto: cuelga de
+  /// él.
+  ///
   /// [datos] es lo que el comercio sabe de esta persona —nombre, sucursal, plan,
   /// segmento— y que nosotros no podemos inventar. Sin esto, la consola muestra
   /// un identificador opaco y no hay forma de buscar a nadie ni de segmentar un
   /// envío. Se manda en cada inicio de sesión, no una sola vez: la sucursal de
   /// una persona cambia, y el plan más todavía.
+  ///
+  /// [identityHash] es la firma que calcula el backend del comercio sobre el
+  /// [userId]. El servicio la verifica cuando el comercio activó ese modo.
+  ///
+  /// 🔴 **Es el corazón del rediseño**: el sujeto se da de alta ANTES de tocar
+  /// ningún permiso. Hasta acá, quien decía que no a los avisos no quedaba
+  /// anotado en ningún lado —sin permiso no hay token, y sin token no había
+  /// alta—. Después de esta llamada esa persona existe para el sistema con su
+  /// aparato enlazado, aunque el permiso quede en «denegado».
   static Future<ResultadoDeSesion> alIniciarSesion({
     required String userId,
-    String? identityHash,
-    String? identity,
+    TipoDeSujeto tipo = TipoDeSujeto.natural,
+    Documento? documento,
+    Organizacion? organizacion,
     Map<String, dynamic>? datos,
+    String? identityHash,
+    @Deprecated(
+      'Usá `documento: Documento(clase: ClaseDeDocumento.cedula, numero: '
+      '...)` en su lugar. Se sigue traduciendo sola —no se rompe nada— pero '
+      'sólo alcanza para cédulas: con `documento` se declara la clase real '
+      '(rif, pasaporte, otro) desde el arranque.',
+    )
+    String? identity,
   }) =>
       _yo._alIniciarSesion(
         userId: userId,
+        tipo: tipo,
+        documento: documento,
+        organizacion: organizacion,
         identityHash: identityHash,
+        // ignore: deprecated_member_use_from_same_package
         identity: identity,
         datos: datos,
       );
@@ -547,6 +591,15 @@ class AkPush {
       // Para el isolate de segundo plano, que no ve nada de esto. Ver H-09.
       await _almacen.guardarCredencial(apiKey, urlNormalizada);
 
+      // ══ LA INSTALACIÓN NACE ACÁ ═══════════════════════════════════════════
+      //
+      // Apenas hay datos del aparato y con quién hablar, sin esperar ni al
+      // permiso ni a que alguien inicie sesión: en el modelo nuevo el aparato
+      // existe primero y el sujeto se enlaza después, en `alIniciarSesion`.
+      // Por eso va sin token —todavía no se pidió permiso— y sin sujeto
+      // —todavía no entró nadie—.
+      await _registrarInstalacion(datos);
+
       _consentimiento = await _almacen.leerConsentimiento();
 
       final cacheada = await _almacen.leer();
@@ -619,6 +672,26 @@ class AkPush {
         return cacheada;
       }
       rethrow;
+    }
+  }
+
+  /// Da de alta —o actualiza— el APARATO en el modelo nuevo.
+  ///
+  /// 🔴 NUNCA TUMBA EL ARRANQUE. Sin red en el primerísimo arranque, la
+  /// instalación queda sin dar de alta y se reintenta sola en el próximo
+  /// `init()` — es upsert por `instalacionId`, así que reintentar no duplica
+  /// nada. Se anota el error para el diagnóstico y se sigue: éste es un dato
+  /// de inventario del aparato, no el permiso ni el token, y perderlo un
+  /// arranque no le cuesta un aviso a nadie.
+  Future<void> _registrarInstalacion(DatosDelDispositivo datos) async {
+    try {
+      final instalacionId = await _almacen.leerOCrearInstalacionId();
+      await _api!.registrarInstalacion(
+        instalacionId: instalacionId,
+        aparato: datos.toJson(),
+      );
+    } catch (e) {
+      _ultimoError = e is AkPushError ? e : null;
     }
   }
 
@@ -873,6 +946,9 @@ class AkPush {
     final datos = await DatosDelDispositivo.recolectar();
     try {
       await _api?.registrarDispositivo(
+        // El mismo con el que se dio de alta la instalación: sin esto el servidor
+        // la identifica por el `deviceId` del aparato y crea una segunda.
+        instalacionId: await _almacen.leerOCrearInstalacionId(),
         userId: userId,
         token: _token!,
         plataforma: datos.plataforma,
@@ -915,11 +991,59 @@ class AkPush {
   /// separada de quien la ejecuta: acá sólo se cumple el plan.
   Future<ResultadoDeSesion> _alIniciarSesion({
     required String userId,
+    TipoDeSujeto tipo = TipoDeSujeto.natural,
+    Documento? documento,
+    Organizacion? organizacion,
     String? identityHash,
     String? identity,
     Map<String, dynamic>? datos,
   }) async {
     _asegurarIniciado();
+
+    // 🔴 `identity` queda en desuso: se traduce ACÁ, una sola vez, para que
+    // todo lo de abajo trabaje siempre con `documento` sin importar por cuál
+    // de las dos entró quien integra.
+    final documentoResuelto = documento ??
+        (identity != null && identity.isNotEmpty
+            ? Documento(clase: ClaseDeDocumento.cedula, numero: identity)
+            : null);
+
+    // ══ EL SUJETO NACE ACÁ, ANTES DE TOCAR NINGÚN PERMISO ═══════════════════
+    //
+    // Es el corazón del rediseño: hasta ahora, sin permiso no había token, y
+    // sin token no había alta — quien decía que no a los avisos no quedaba
+    // anotado en ningún lado. Yendo primero acá, esta persona existe para el
+    // sistema con su aparato enlazado, aunque más abajo el permiso quede en
+    // «denegado».
+    //
+    // 🔴 SIN HUELLA A PROPÓSITO, a diferencia del alta del token de más abajo.
+    // El alta del token se acota con `HuellaDelRegistro` porque repetirla no
+    // cambia nada; ésta se llama en CADA inicio de sesión porque el servidor
+    // tiene que actualizar `visto.ultima` siempre, y porque es la única forma
+    // de que un cambio de documento o de organización llegue al servidor sin
+    // depender de que ADEMÁS haya cambiado el token o el permiso — que es
+    // justo el error que la huella del token ya causó una vez con `datos`
+    // (ver la nota en `HuellaDelRegistro`). No acotar esta llamada es cómo se
+    // evita caer en el mismo agujero por otra puerta.
+    try {
+      final instalacionId = await _almacen.leerOCrearInstalacionId();
+      await _api!.registrarSujeto(
+        sujetoId: userId,
+        tipo: tipo,
+        documento: documentoResuelto,
+        organizacion: organizacion,
+        datos: datos,
+        instalacionId: instalacionId,
+      );
+    } catch (e) {
+      // 🔴 SI ESTO FALLA, EL REGISTRO DEL TOKEN SE INTENTA IGUAL — ver más
+      // abajo. Encadenar el alta del token detrás de la del sujeto sin esta
+      // salvaguarda dejaría a la persona sin avisos por una falla de red que
+      // no tiene nada que ver con el permiso: un servidor caído en el instante
+      // del login no le puede costar los avisos a nadie. Se anota para el
+      // diagnóstico y se sigue.
+      _ultimoError = e is AkPushError ? e : null;
+    }
 
     // 🔴 Se le PREGUNTA al sistema operativo, no se confía en lo guardado. La
     // persona pudo haber apagado las notificaciones desde los Ajustes del
@@ -1076,6 +1200,9 @@ class AkPush {
     final cuandoSePregunto = await _almacen.cuandoSePregunto();
 
     await _api!.registrarDispositivo(
+        // El mismo con el que se dio de alta la instalación: sin esto el servidor
+        // la identifica por el `deviceId` del aparato y crea una segunda.
+        instalacionId: await _almacen.leerOCrearInstalacionId(),
       userId: userId,
       token: _token!,
       plataforma: datos.plataforma,
@@ -1122,6 +1249,9 @@ class AkPush {
     final delAparato = await DatosDelDispositivo.recolectar();
 
     await _api!.registrarDispositivo(
+        // El mismo con el que se dio de alta la instalación: sin esto el servidor
+        // la identifica por el `deviceId` del aparato y crea una segunda.
+        instalacionId: await _almacen.leerOCrearInstalacionId(),
       userId: userId,
       token: _token!,
       plataforma: delAparato.plataforma,
@@ -1307,6 +1437,9 @@ class AkPush {
     final datos = await DatosDelDispositivo.recolectar();
     try {
       await _api?.registrarDispositivo(
+        // El mismo con el que se dio de alta la instalación: sin esto el servidor
+        // la identifica por el `deviceId` del aparato y crea una segunda.
+        instalacionId: await _almacen.leerOCrearInstalacionId(),
         userId: userId,
         token: nuevo,
         plataforma: datos.plataforma,

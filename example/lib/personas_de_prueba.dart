@@ -26,7 +26,19 @@
 /// ningún lado donde haya datos de alguien.
 ///
 /// Las cédulas y los correos son inventados y no corresponden a nadie.
+///
+/// ## Los cuatro casos del modelo de identidad
+///
+/// Las cien de abajo son todas personas naturales con cédula — el caso de
+/// siempre. Al final de este archivo hay CUATRO más, agregadas con el
+/// rediseño de colecciones, que prueban lo que las cien no pueden: DOS
+/// **empresas** (`TipoDeSujeto.juridica`, documento con `ClaseDeDocumento.rif`)
+/// y DOS **empleados de un proveedor** (naturales, pero con [Organizacion] —
+/// el sujeto PERTENECE a la organización, no se reemplaza por ella). Ver
+/// [casosDeIdentidadDePrueba].
 library;
+
+import 'package:hz_collection_sdk/hz_collection_sdk.dart';
 
 /// Una persona del juego de prueba.
 class PersonaDePrueba {
@@ -39,6 +51,9 @@ class PersonaDePrueba {
     required this.sucursal,
     required this.ciudad,
     required this.plan,
+    this.tipo = TipoDeSujeto.natural,
+    this.claseDeDocumento = ClaseDeDocumento.cedula,
+    this.organizacion,
   });
 
   /// La clave con la que el comercio la identifica. Opaca para el SDK.
@@ -53,6 +68,11 @@ class PersonaDePrueba {
   final String usuario;
 
   // ── alias · se direcciona por acá ──────────────────────────────────────
+  //
+  // 🔴 El nombre del campo quedó de cuando sólo existían personas naturales.
+  // Para los cuatro casos de [casosDeIdentidadDePrueba] guarda el número de
+  // documento que corresponda —un RIF para las empresas—, y [claseDeDocumento]
+  // dice cuál es. No se renombró el campo para no tocar las cien de abajo.
   final String cedula;
   final String correo;
 
@@ -61,6 +81,22 @@ class PersonaDePrueba {
   final String sucursal;
   final String ciudad;
   final String plan;
+
+  /// Si es una persona natural o una empresa. Por omisión, natural: es lo que
+  /// son las cien de abajo.
+  final TipoDeSujeto tipo;
+
+  /// Con qué clase de documento se identifica [cedula]. Por omisión, cédula.
+  final ClaseDeDocumento claseDeDocumento;
+
+  /// La organización a la que pertenece, si tiene una. `null` en las cien:
+  /// no todo el mundo trabaja para un proveedor del comercio.
+  final Organizacion? organizacion;
+
+  /// El documento tal como lo espera `AkPush.alIniciarSesion`. Se arma desde
+  /// [cedula] y [claseDeDocumento]: son las dos empresas las que cambian la
+  /// clase, no el campo — así el resto del demo no se entera de la diferencia.
+  Documento get documento => Documento(clase: claseDeDocumento, numero: cedula);
 
   /// Lo que el backend del comercio le mandaría al servicio para darla de alta.
   Map<String, dynamic> get comoAlta => {
@@ -1132,3 +1168,82 @@ List<PersonaDePrueba> buscarPorNombre(String texto) {
       .where((p) => p.nombre.toLowerCase().contains(t))
       .toList();
 }
+
+// ── Los cuatro casos del modelo de identidad ───────────────────────────────
+//
+// Van APARTE de las cien, no mezclados adentro: [cienPersonas] promete cien
+// personas naturales con cédula desde su propio nombre y su comentario, y
+// agregar acá cuatro entradas de otra forma lo volvería falso para quien lo
+// lea sin mirar el final del archivo. `main.dart` junta las dos listas para
+// que las cuatro sean seleccionables en la pantalla del demo.
+
+/// Dos empresas — `TipoDeSujeto.juridica`, con RIF.
+const empresasDePrueba = <PersonaDePrueba>[
+  PersonaDePrueba(
+    userId: 'empresa1-J304521679',
+    usuario: 'empresa1',
+    cedula: 'J-304521679',
+    correo: 'compras@distribuidoraelfaro.com.ve',
+    nombre: 'Distribuidora El Faro, C.A.',
+    sucursal: 'CCS-01',
+    ciudad: 'Caracas',
+    plan: 'Empresas',
+    tipo: TipoDeSujeto.juridica,
+    claseDeDocumento: ClaseDeDocumento.rif,
+  ),
+  PersonaDePrueba(
+    userId: 'empresa2-J403187745',
+    usuario: 'empresa2',
+    cedula: 'J-403187745',
+    correo: 'administracion@construval.com.ve',
+    nombre: 'Construval Ingeniería, C.A.',
+    sucursal: 'VAL-02',
+    ciudad: 'Valencia',
+    plan: 'Empresas',
+    tipo: TipoDeSujeto.juridica,
+    claseDeDocumento: ClaseDeDocumento.rif,
+  ),
+];
+
+/// Dos empleados de un proveedor — naturales, con [Organizacion]. El sujeto
+/// PERTENECE a la organización, no se reemplaza por ella: sigue teniendo su
+/// propia cédula y su propio `userId`.
+const empleadosDeProveedorDePrueba = <PersonaDePrueba>[
+  PersonaDePrueba(
+    userId: 'empleado1-19988341',
+    usuario: 'empleado1',
+    cedula: '19988341',
+    correo: 'jgimenez@logisticasur.com.ve',
+    nombre: 'Julio Giménez',
+    sucursal: 'MCB-02',
+    ciudad: 'Maracaibo',
+    plan: 'Empleados',
+    organizacion: Organizacion(
+      codigo: 'prov-logisticasur',
+      nombre: 'Logística Sur, C.A.',
+      rol: 'repartidor',
+    ),
+  ),
+  PersonaDePrueba(
+    userId: 'empleado2-20214477',
+    usuario: 'empleado2',
+    cedula: '20214477',
+    correo: 'mtovar@logisticasur.com.ve',
+    nombre: 'Mariana Tovar',
+    sucursal: 'MCB-02',
+    ciudad: 'Maracaibo',
+    plan: 'Empleados',
+    organizacion: Organizacion(
+      codigo: 'prov-logisticasur',
+      nombre: 'Logística Sur, C.A.',
+      rol: 'supervisora',
+    ),
+  ),
+];
+
+/// Las cuatro juntas, para ofrecerlas en la pantalla del demo junto con las
+/// cien. Ver la nota de arriba sobre por qué no van adentro de [cienPersonas].
+const casosDeIdentidadDePrueba = <PersonaDePrueba>[
+  ...empresasDePrueba,
+  ...empleadosDeProveedorDePrueba,
+];

@@ -1,4 +1,4 @@
-name: ak_push
+name: hz_collection_sdk
 description: "Recibir notificaciones push con una llave y una línea. La cuenta de Google llega desde el servidor: no se pega ningún archivo de configuración."
 version: 0.1.0
 publish_to: 'none'

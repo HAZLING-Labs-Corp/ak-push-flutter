@@ -1,4 +1,13 @@
 /// Recibir notificaciones push con una llave y una línea.
+///
+/// El PAQUETE se llama `hz_collection_sdk` — el producto es Collection—, pero
+/// la clase pública sigue siendo `AkPush`.
+///
+/// 🔴 PENDIENTE, A PROPÓSITO: la consola muestra `AkPush.init({...})` como
+/// ejemplo copiable en su pantalla de integración, y renombrar la clase acá
+/// sin coordinar ese cambio con la consola rompe ese ejemplo para todo el
+/// que lo copie mientras tanto. Cuando se renombre, es un cambio coordinado
+/// entre los dos lados, no algo que se resuelve solo de este lado.
 library;
 
 export 'src/ak_push.dart' show AkPush, manejadorDeSegundoPlano;
@@ -36,7 +45,12 @@ export 'src/modal_de_ubicacion.dart' show ModalDeUbicacion;
 export 'src/politica.dart'
     show PoliticaDeUbicacion, TextosDeUbicacion, MomentoDeUbicacion;
 export 'src/push_message.dart' show AccionDePush, PushMessage;
-export 'src/remote_config.dart' show AkPushConfig;
+export 'src/remote_config.dart' show AkPushConfig, InfoDeModulo;
+// El sujeto — quien se loguea — y su documento y organización. Es la raíz del
+// modelo nuevo: sin este export nadie puede armar un `Documento` para pasarlo
+// a `AkPush.alIniciarSesion`.
+export 'src/sujeto.dart'
+    show TipoDeSujeto, ClaseDeDocumento, Documento, Organizacion;
 // `AvisoConRuta` va en el `show` o los atajos `mensaje.tieneRuta` y
 // `mensaje.ruta` no existen para quien integra: una extensión que no se exporta
 // no se aplica del otro lado.
