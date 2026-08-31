@@ -15,20 +15,22 @@ lo hospeda. Desde un teléfono real en la misma red, la IP de la máquina.
 
 ---
 
-## 🔴 Antes de correrlo: el identificador del paquete
+## El identificador del paquete
 
-Está en `com.juanpush.android1` —una app de prueba nuestra— y **para vos no va a
-funcionar**. El servicio verifica que el paquete que pide la configuración esté
-registrado en tu comercio, así que con otro devuelve un 409 explicando el
-desacuerdo.
+El servicio verifica que el paquete que pide la configuración esté registrado en
+tu comercio: con otro devuelve un 409 explicando el desacuerdo. Así que el
+ejemplo tiene que compilarse con **el tuyo**, y se pasa al compilar:
 
-Cambialo por el tuyo en tres lugares:
+```bash
+flutter run -Ppaquete=com.tuempresa.app \
+  --dart-define=AKPUSH_KEY=… --dart-define=AKPUSH_COMERCIO=…
+```
 
-| archivo | qué |
-|---|---|
-| `android/app/build.gradle.kts` | `namespace` y `applicationId` |
-| `android/app/src/main/kotlin/…/MainActivity.kt` | el `package` y la carpeta |
-| tu consola de push | registrá ese paquete en tu comercio |
+**No hay ningún archivo que editar.** Lo único que falta es registrar ese paquete
+en tu comercio, desde la consola.
+
+Sin `-Ppaquete` usa `com.juanpush.android1`, que es una app de prueba nuestra y
+no va a servirte.
 
 ---
 

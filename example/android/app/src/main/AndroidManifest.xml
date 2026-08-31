@@ -5,8 +5,11 @@
         android:label="ak_push_demo"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- La actividad de Flutter, en vez de una propia: así el identificador
+             del paquete se puede cambiar al compilar sin tocar ningún archivo
+             de código. -->
         <activity
-            android:name=".MainActivity"
+            android:name="io.flutter.embedding.android.FlutterActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
