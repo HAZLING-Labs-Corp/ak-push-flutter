@@ -10,7 +10,8 @@ export 'src/diagnostico.dart'
         EstadoDeFirebase,
         EstadoDeLaConfiguracion,
         EstadoDelRegistro,
-        EstadoDelToken;
+        EstadoDelToken,
+        EstadoDeUbicacion;
 export 'src/errors.dart' show AkPushError, AkPushErrorCode;
 export 'src/consentimiento.dart' show Consentimiento;
 export 'src/politica.dart'

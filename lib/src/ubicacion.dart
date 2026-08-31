@@ -46,6 +46,22 @@ class Ubicacion {
 
   DateTime? _ultimaLectura;
 
+  /// 🔴 POR QUÉ NO SE MANDÓ LA ÚLTIMA POSICIÓN.
+  ///
+  /// Existe porque el silencio de este módulo ya costó tres diagnósticos a mano en un
+  /// solo día. `reportarSiCorresponde` no tumba nada —y está bien: perder una posición
+  /// cuesta un dato de segmentación, que falle el arranque cuesta que esa persona no
+  /// reciba nada— pero hasta hoy ese silencio era total: la consola mostraba «con
+  /// permiso, cero ubicaciones» y no había forma de saber si faltaba el permiso, si el
+  /// teléfono tenía la ubicación apagada, si el GPS no enganchó o si el servidor
+  /// rechazó. Cuatro causas distintas, cuatro arreglos distintos, cero pistas.
+  ///
+  /// Ahora queda acá y sale en el diagnóstico.
+  String? ultimoMotivo;
+
+  /// Cuándo se mandó una posición por última vez. `null` = nunca.
+  DateTime? ultimoEnvio;
+
   /// ¿Ya está concedido?
   Future<bool> get concedido async =>
       await Permission.locationWhenInUse.isGranted;
@@ -100,22 +116,42 @@ class Ubicacion {
   /// nada.
   Future<bool> reportarSiCorresponde(String userId, {bool forzar = false}) async {
     try {
-      if (!await concedido) return false;
+      if (!await concedido) {
+        ultimoMotivo = 'la aplicación no tiene permiso de ubicación';
+        return false;
+      }
+      if (!await servicioPrendido) {
+        ultimoMotivo = 'el teléfono tiene la ubicación apagada';
+        return false;
+      }
 
       final ahora = DateTime.now();
       if (!forzar &&
           _ultimaLectura != null &&
           ahora.difference(_ultimaLectura!) < minimoEntreLecturas) {
+        ultimoMotivo = 'se leyó hace poco; la próxima lectura toca en '
+            '${minimoEntreLecturas.inHours - ahora.difference(_ultimaLectura!).inHours} h';
         return false;
       }
 
       final p = await _leer();
-      if (p == null) return false;
+      if (p == null) {
+        // Pasa de verdad: en un lugar sin señal, con el GPS recién prendido, o cuando
+        // el sistema todavía no tiene ninguna posición en caché. No es un error de
+        // nadie y se resuelve solo en el próximo intento.
+        ultimoMotivo = 'el sistema no devolvió ninguna posición en '
+            '${_tiempoMaximo.inSeconds} s';
+        return false;
+      }
 
       await _api.reportarUbicacion(userId: userId, posicion: p);
       _ultimaLectura = ahora;
+      ultimoEnvio = ahora;
+      ultimoMotivo = null;
       return true;
-    } catch (_) {
+    } catch (e) {
+      // El motivo se guarda; el error no se propaga. Ver el comentario de arriba.
+      ultimoMotivo = 'falló al leer o al enviar: $e';
       return false;
     }
   }
@@ -131,15 +167,13 @@ class Ubicacion {
   ///
   /// Y con un tiempo máximo: sin él, en un lugar sin señal esto queda esperando
   /// para siempre y el arranque de la aplicación se cuelga con él.
+  static const _tiempoMaximo = Duration(seconds: 12);
+
   Future<Map<String, dynamic>?> _leer() async {
     if (!await Geolocator.isLocationServiceEnabled()) return null;
 
-    final p = await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.low,
-        timeLimit: Duration(seconds: 12),
-      ),
-    );
+    final p = await _posicion();
+    if (p == null) return null;
 
     return {
       'lat': p.latitude,
@@ -152,5 +186,44 @@ class Ubicacion {
       'exactitud': 'aproximada',
       'cuando': p.timestamp.toUtc().toIso8601String(),
     };
+  }
+
+  /// TRES INTENTOS, DE MÁS BARATO A MÁS CARO. Devuelve `null` si ninguno da.
+  ///
+  /// 🔴 SUBIR LA PRECISIÓN PEDIDA **NO** ROMPE LA PROMESA DE «SÓLO LA ZONA», y conviene
+  /// entender por qué antes de tocar esto: con sólo `ACCESS_COARSE_LOCATION` concedido,
+  /// Android **redondea la respuesta a unos 2 km pase lo que pase**. El permiso es el
+  /// techo, no lo que pedimos. Sin `ACCESS_FINE_LOCATION` —que este SDK no declara ni
+  /// pide— no hay forma de obtener la dirección de nadie, aunque se pida `best`.
+  ///
+  /// Por qué hacen falta los tres:
+  ///
+  ///  1. `low` usa sólo las antenas de telefonía. Es instantáneo y no gasta batería,
+  ///     pero **hay teléfonos y lugares donde simplemente no devuelve nada** — medido
+  ///     el 2026-08-31: `TimeoutException after 0:00:12` y ni una posición en toda la
+  ///     sesión, con permiso concedido y ubicación prendida.
+  ///  2. `medium` agrega el wifi. Es el que anda en la mayoría de los casos donde el
+  ///     primero falla, y sigue sin encender el GPS.
+  ///  3. La última conocida, que el sistema ya tiene guardada. Llega al instante, puede
+  ///     ser de hace horas — y para saber en qué ciudad está alguien, eso alcanza. Vale
+  ///     mucho más que no mandar nada.
+  Future<Position?> _posicion() async {
+    for (final precision in [LocationAccuracy.low, LocationAccuracy.medium]) {
+      try {
+        return await Geolocator.getCurrentPosition(
+          locationSettings: LocationSettings(
+            accuracy: precision,
+            timeLimit: _tiempoMaximo,
+          ),
+        );
+      } catch (_) {
+        // Se prueba el siguiente. El motivo del fallo final lo anota quien llama.
+      }
+    }
+    try {
+      return await Geolocator.getLastKnownPosition();
+    } catch (_) {
+      return null;
+    }
   }
 }

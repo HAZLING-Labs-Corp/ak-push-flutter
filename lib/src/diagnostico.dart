@@ -177,6 +177,7 @@ class Diagnostico {
     required this.permiso,
     required this.token,
     required this.registro,
+    this.ubicacion,
     this.ultimoError,
   });
 
@@ -191,11 +192,28 @@ class Diagnostico {
   final EstadoDelToken token;
   final EstadoDelRegistro registro;
 
+  /// Cómo va la ubicación, y **por qué no se mandó** la última vez.
+  ///
+  /// Es `null` cuando el comercio no tiene la ubicación activada, que es el estado por
+  /// omisión: mostrar «sin ubicaciones» a quien nunca la pidió sería un error inventado.
+  final EstadoDeUbicacion? ubicacion;
+
   /// El último [AkPushError] que el SDK se tragó para no romperle el arranque a
   /// la aplicación. Sin esto queda enterrado: la fachada silencia a propósito
   /// los fallos de permiso, de token y de alta, y ese silencio es justamente lo
   /// que deja al integrador sin ninguna pista.
   final AkPushError? ultimoError;
+
+  /// Devuelve la misma foto con la ubicación puesta. Ver el comentario en `ak_push.dart`.
+  Diagnostico conUbicacion(EstadoDeUbicacion? u) => Diagnostico(
+        configuracion: configuracion,
+        firebase: firebase,
+        permiso: permiso,
+        token: token,
+        registro: registro,
+        ubicacion: u,
+        ultimoError: ultimoError,
+      );
 
   /// Arma la foto. Es asíncrono sólo porque lee el disco y el estado del
   /// permiso.
@@ -425,6 +443,10 @@ class Diagnostico {
         _fila('permiso', permiso.permiteRecibir, permiso.name),
         _fila('token', token.estaBien, _detalleToken()),
         _fila('registro', registro.estaBien, _detalleRegistro()),
+        // La ubicación NO es un eslabón de la cadena de avisos: que no ande no impide
+        // que lleguen los push. Va abajo, y sólo si el comercio la tiene activada.
+        if (ubicacion != null)
+          _fila('ubicación', ubicacion!.puedeUbicar, _detalleUbicacion()),
         // El último error no es un eslabón y por eso no se marca ok ni ROTO: un
         // error viejo con la cadena entera no es una falla, es un antecedente.
         '  ${'último error'.padRight(14)}      ${ultimoError ?? 'ninguno'}',
@@ -435,6 +457,25 @@ class Diagnostico {
   /// como ruido no se lee.
   static String _fila(String nombre, bool bien, String detalle) =>
       '  ${nombre.padRight(14)}${bien ? 'ok  ' : 'ROTO'}  $detalle';
+
+  String _detalleUbicacion() {
+    final u = ubicacion!;
+    // 🔴 El orden importa: primero LO QUE FALTA, que es lo accionable, y después el
+    // antecedente. Un diagnóstico que abre con «última: hace 3 h» y esconde «el
+    // teléfono tiene la ubicación apagada» al final hace perder el tiempo a quien lo lee.
+    final falta = <String>[
+      if (!u.permitida) 'sin permiso',
+      if (!u.servicioPrendido) 'teléfono con la ubicación apagada',
+    ];
+    final cuando = u.ultimoEnvio == null
+        ? 'nunca se mandó una posición'
+        : 'última hace ${DateTime.now().difference(u.ultimoEnvio!).inMinutes} min';
+    return [
+      if (falta.isNotEmpty) falta.join(' + '),
+      cuando,
+      if (u.ultimoMotivo != null) 'motivo: ${u.ultimoMotivo}',
+    ].join(' · ');
+  }
 
   String _detalleConfiguracion() {
     if (!configuracion.hay) return 'no hay';
@@ -542,4 +583,59 @@ class Diagnostico {
     if (token.length <= 12) return token;
     return '${token.substring(0, 6)}…${token.substring(token.length - 4)}';
   }
+}
+
+
+/// CÓMO VA LA UBICACIÓN — SOBRE TODO, POR QUÉ NO ANDA
+///
+/// Existe porque este módulo falla en silencio a propósito: perder una posición cuesta
+/// un dato de segmentación, que falle el arranque cuesta que esa persona no reciba nada.
+/// Pero el silencio dejaba al comercio sin ninguna pista: en la consola la persona
+/// figuraba «con permiso, cero ubicaciones» y las causas posibles eran cuatro, con
+/// cuatro arreglos distintos:
+///
+///   · la aplicación no tiene el permiso        → ofrecerle el modal
+///   · el teléfono tiene la ubicación apagada   → mandarlo a los ajustes del teléfono
+///   · el sistema no devolvió posición          → no es de nadie, se resuelve solo
+///   · el envío al servidor falló               → mirar la red o el servicio
+///
+/// Medido el 2026-08-31: tres diagnósticos a mano en un día para distinguir entre las
+/// dos primeras. Con esto se lee.
+class EstadoDeUbicacion {
+  const EstadoDeUbicacion({
+    required this.permitida,
+    required this.servicioPrendido,
+    this.ultimoEnvio,
+    this.ultimoMotivo,
+  });
+
+  /// La aplicación tiene el permiso.
+  final bool permitida;
+
+  /// El teléfono tiene el interruptor de ubicación prendido. **Es otra cosa**, y las
+  /// dos tienen que estar para que llegue una sola posición.
+  final bool servicioPrendido;
+
+  /// Cuándo se mandó una posición por última vez. `null` = nunca se mandó ninguna.
+  final DateTime? ultimoEnvio;
+
+  /// Por qué no se mandó la última vez. `null` = la última salió bien.
+  final String? ultimoMotivo;
+
+  /// Si la ubicación está ANDANDO — no sólo si está permitida.
+  ///
+  /// 🔴 Los dos interruptores puestos y cero posiciones **no es «ok»**. Visto en
+  /// pantalla el 2026-08-31: el diagnóstico decía `ubicación ok` sobre un aparato que
+  /// nunca había mandado una sola posición, y sólo el detalle de al lado lo desmentía.
+  /// Un eslabón en verde que hay que leer con lupa para descubrir que está en rojo es
+  /// peor que no tenerlo: el que diagnostica lo saltea.
+  bool get puedeUbicar =>
+      permitida && servicioPrendido && (ultimoEnvio != null || ultimoMotivo == null);
+
+  Map<String, dynamic> toJson() => {
+        'permitida': permitida,
+        'servicioPrendido': servicioPrendido,
+        'ultimoEnvio': ultimoEnvio?.toIso8601String(),
+        'ultimoMotivo': ultimoMotivo,
+      };
 }

@@ -1187,7 +1187,7 @@ class AkPush {
     await _yo._api?.reportarEvento(pushLogId: id, accion: accion.valor);
   }
 
-  Future<Diagnostico> _diagnostico() => Diagnostico.reunir(
+  Future<Diagnostico> _diagnostico() async => (await Diagnostico.reunir(
         config: _config,
         configPedidaAlServidor: _configDelServidor,
         token: _token,
@@ -1203,7 +1203,21 @@ class AkPush {
         // «permiso concedido» justo en el caso que más se reporta. El gestor sí
         // se reutiliza, para no volver a pagar la lectura del nivel de Android.
         gestorDePermiso: _permiso,
-      );
+      ))
+          // La ubicación se agrega después de reunir el resto: `reunir` es de este
+          // paquete pero no conoce el módulo de ubicación, y no tiene por qué —
+          // diagnosticar la mensajería y diagnosticar la ubicación son dos cosas.
+          //
+          // Sólo se agrega si el comercio la tiene activada: mostrar «sin ubicaciones»
+          // a quien nunca la pidió sería un problema inventado.
+          .conUbicacion(_politicaDeUbicacion.activa
+              ? EstadoDeUbicacion(
+                  permitida: await _ubicacion.concedido,
+                  servicioPrendido: await _ubicacion.servicioPrendido,
+                  ultimoEnvio: _ubicacion.ultimoEnvio,
+                  ultimoMotivo: _ubicacion.ultimoMotivo,
+                )
+              : null);
 
   // ── Lo que llega ────────────────────────────────────────────────────────
 
