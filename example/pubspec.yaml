@@ -39,6 +39,10 @@ dependencies:
   # no necesita esto: el SDK se encarga solo.
   firebase_messaging: ^16.3.0
 
+  # Sólo para SIMULAR lo que haría el backend del comercio al firmar el userId.
+  # Ver la advertencia en lib/main.dart: esto no va en una app de verdad.
+  crypto: ^3.0.6
+
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8

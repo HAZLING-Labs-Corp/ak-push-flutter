@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:ak_push/ak_push.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 
 import 'personas_de_prueba.dart';
@@ -7,6 +10,27 @@ import 'personas_de_prueba.dart';
 /// máquina que lo hospeda.
 const _llave = String.fromEnvironment('AKPUSH_KEY', defaultValue: 'pk_demo.local');
 const _url = String.fromEnvironment('AKPUSH_URL', defaultValue: 'http://10.0.2.2:3096');
+
+/// 🔴 ESTO NO VA EN UNA APLICACIÓN DE VERDAD. NUNCA.
+///
+/// El secreto con el que se firma el `userId` vive en el **backend** del
+/// comercio, y la aplicación recibe la firma ya calculada junto con la sesión.
+/// Ponerlo acá lo hace tan legible como la llave para cualquiera que descomprima
+/// el APK — y entonces la firma deja de probar nada, que es exactamente el
+/// agujero que la verificación de identidad viene a cerrar.
+///
+/// Está sólo para poder probar los modos AVISA y EXIGIDA de punta a punta sin
+/// levantar un backend de mentira. Se pasa por `--dart-define` y si no viene, no
+/// se firma nada.
+const _secretoDePrueba = String.fromEnvironment('AKPUSH_SECRETO_DE_PRUEBA');
+
+/// Lo que haría el backend del comercio: HMAC-SHA256 del userId, en hexadecimal.
+String? _firmarComoLoHariaElBackend(String userId) {
+  if (_secretoDePrueba.isEmpty) return null;
+  return Hmac(sha256, utf8.encode(_secretoDePrueba))
+      .convert(utf8.encode(userId))
+      .toString();
+}
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -79,7 +103,10 @@ class _PantallaState extends State<Pantalla> {
   Future<void> _entrar(PersonaDePrueba p) async {
     _anotar('entrando como ${p.usuario} (${p.nombre})');
     try {
-      final r = await AkPush.alIniciarSesion(userId: p.userId);
+      final r = await AkPush.alIniciarSesion(
+        userId: p.userId,
+        identityHash: _firmarComoLoHariaElBackend(p.userId),
+      );
       setState(() {
         _dentro = p;
         _sesion = r;
@@ -95,6 +122,10 @@ class _PantallaState extends State<Pantalla> {
       }
     } on AkPushError catch (e) {
       _anotar('no se pudo entrar: ${e.code.name}');
+      if (e.code == AkPushErrorCode.firmaDeIdentidad) {
+        _anotar('el comercio exige el userId firmado — pasá '
+            '--dart-define=AKPUSH_SECRETO_DE_PRUEBA=…');
+      }
     }
   }
 
