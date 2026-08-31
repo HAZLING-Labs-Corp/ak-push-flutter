@@ -78,6 +78,8 @@ class AkPushApi {
     required String plataforma,
     String? identity,
     String? identityHash,
+    /// Lo que el comercio sabe de esta persona: nombre, sucursal, plan, lo que sea.
+    Map<String, dynamic>? datos,
     Map<String, dynamic>? deviceInfo,
     bool permisoConcedido = true,
     String? estadoDelPermiso,
@@ -113,6 +115,17 @@ class AkPushApi {
             if (consentimiento != null) 'consentimiento': consentimiento,
             if (identity != null) 'identity': identity,
             if (identityHash != null) 'identityHash': identityHash,
+            // 🔴 LO QUE EL COMERCIO SABE DE ESTA PERSONA, y que nosotros no podemos
+            // inventar: su nombre, su sucursal, su plan, su segmento.
+            //
+            // Sin esto, la consola muestra un identificador opaco —`u_9000`— y no hay
+            // forma de buscar a nadie ni de segmentar un envío. El servicio ya sabe
+            // filtrar por estos campos y los DESCUBRE solo: no hay que declararlos en
+            // ningún lado, basta con mandarlos.
+            //
+            // Se manda en cada registro, no una sola vez: la sucursal de una persona
+            // cambia, y el plan más todavía.
+            if (datos != null && datos.isNotEmpty) 'metadata': datos,
             if (deviceInfo != null) 'deviceInfo': deviceInfo,
           }),
         ));

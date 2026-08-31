@@ -105,7 +105,24 @@ class _PantallaState extends State<Pantalla> {
     try {
       final r = await AkPush.alIniciarSesion(
         userId: p.userId,
+        // La cédula. Es lo que le permite a un sistema de afuera pedir un envío sin
+        // conocer el `userId` interno del comercio — que no tiene por qué conocer.
+        identity: p.cedula,
         identityHash: _firmarComoLoHariaElBackend(p.userId),
+        // 🔴 LO QUE EL COMERCIO SABE DE ESTA PERSONA, y que el servicio no puede
+        // inventar. Sin esto la consola muestra `u_9000` y nada más: no se puede
+        // buscar a nadie por su nombre, ni segmentar un envío por sucursal o por plan.
+        //
+        // No hay que declarar estos campos en ningún lado: el servicio los DESCUBRE
+        // de lo que llega y arma los filtros solo. Cada comercio manda los suyos.
+        datos: {
+          'nombre': p.nombre,
+          'usuario': p.usuario,
+          'correo': p.correo,
+          'sucursal': p.sucursal,
+          'ciudad': p.ciudad,
+          'plan': p.plan,
+        },
       );
       setState(() {
         _dentro = p;

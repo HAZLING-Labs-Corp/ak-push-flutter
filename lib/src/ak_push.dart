@@ -259,15 +259,22 @@ class AkPush {
   ///
   /// Es lo que hay que llamar al iniciar sesión. Devuelve el resumen de cómo
   /// quedó, que es lo que la aplicación necesita para decidir qué mostrar.
+  /// [datos] es lo que el comercio sabe de esta persona —nombre, sucursal, plan,
+  /// segmento— y que nosotros no podemos inventar. Sin esto, la consola muestra
+  /// un identificador opaco y no hay forma de buscar a nadie ni de segmentar un
+  /// envío. Se manda en cada inicio de sesión, no una sola vez: la sucursal de
+  /// una persona cambia, y el plan más todavía.
   static Future<ResultadoDeSesion> alIniciarSesion({
     required String userId,
     String? identityHash,
     String? identity,
+    Map<String, dynamic>? datos,
   }) =>
       _yo._alIniciarSesion(
         userId: userId,
         identityHash: identityHash,
         identity: identity,
+        datos: datos,
       );
 
   /// Cierra el ciclo: da de baja el teléfono y limpia la barra de estado.
@@ -573,17 +580,23 @@ class AkPush {
   /// Ata este teléfono a una persona. Se llama cuando inicia sesión.
   ///
   /// [identityHash] es la firma que calcula el backend del comercio sobre el
-  /// [userId]. Hoy el servidor todavía no la verifica; el parámetro está desde
-  /// la primera versión para que activarla después no rompa a nadie.
+  /// [userId]. El servicio SÍ la verifica desde el 2026-08-30, y cada comercio
+  /// elige en qué modo: apagada, avisando sin rechazar, o exigiéndola.
+  ///
+  /// [datos] es lo que el comercio sabe de esta persona —nombre, sucursal, plan,
+  /// segmento— y que el servicio usa para poder buscarla y segmentar envíos. Sin
+  /// esto, la consola sólo tiene un identificador opaco.
   static Future<void> identify({
     required String userId,
     String? identityHash,
     String? identity,
+    Map<String, dynamic>? datos,
   }) =>
       _yo._identify(
         userId: userId,
         identityHash: identityHash,
         identity: identity,
+        datos: datos,
       );
 
   /// El ciclo de sesión completo. La lógica de qué hacer vive en `sesion.dart`,
@@ -592,6 +605,7 @@ class AkPush {
     required String userId,
     String? identityHash,
     String? identity,
+    Map<String, dynamic>? datos,
   }) async {
     _asegurarIniciado();
 
@@ -613,6 +627,11 @@ class AkPush {
       yaSePregunto: await _almacen.yaSePreguntoElPermiso(),
       desdeLaUltimaPregunta: await _almacen.desdeLaUltimaPregunta(),
       ahora: DateTime.now(),
+      // 🔴 Si al comercio le cambió la sucursal o el plan de esta persona, hay que
+      // registrar de nuevo aunque el usuario, el token y el permiso sean idénticos.
+      // Sin esto el servidor se queda con el dato viejo para siempre y los envíos
+      // segmentados le pegan al grupo equivocado, sin ningún error visible.
+      huellaDeDatos: HuellaDelRegistro.resumirDatos(datos),
     );
 
     // Primero la baja de la anterior: si el registro nuevo falla a mitad, el
@@ -655,6 +674,7 @@ class AkPush {
           userId: userId,
           identity: identity,
           identityHash: identityHash,
+          datosDeLaPersona: datos,
           concedido: concedido,
           estado: estado,
         );
@@ -688,6 +708,7 @@ class AkPush {
     EstadoDelPermiso? estado,
     String? identity,
     String? identityHash,
+    Map<String, dynamic>? datosDeLaPersona,
   }) async {
     final datos = await DatosDelDispositivo.recolectar();
     final cuandoSePregunto = await _almacen.cuandoSePregunto();
@@ -698,6 +719,7 @@ class AkPush {
       plataforma: datos.plataforma,
       identity: identity,
       identityHash: identityHash,
+      datos: datosDeLaPersona,
       deviceInfo: datos.toJson(),
       permisoConcedido: concedido,
       estadoDelPermiso: (estado ?? _estado).name,
@@ -712,6 +734,7 @@ class AkPush {
       token: _token!,
       permisoConcedido: concedido,
       cuando: _registradoEl!,
+      huellaDeDatos: HuellaDelRegistro.resumirDatos(datosDeLaPersona),
     );
     await _almacen.guardarHuella(_huella!.toJson());
   }
@@ -720,6 +743,7 @@ class AkPush {
     required String userId,
     String? identityHash,
     String? identity,
+    Map<String, dynamic>? datos,
   }) async {
     _asegurarIniciado();
 
@@ -733,15 +757,16 @@ class AkPush {
       return;
     }
 
-    final datos = await DatosDelDispositivo.recolectar();
+    final delAparato = await DatosDelDispositivo.recolectar();
 
     await _api!.registrarDispositivo(
       userId: userId,
       token: _token!,
-      plataforma: datos.plataforma,
+      plataforma: delAparato.plataforma,
       identity: identity,
       identityHash: identityHash,
-      deviceInfo: datos.toJson(),
+      datos: datos,
+      deviceInfo: delAparato.toJson(),
       // El servicio filtra por esto antes de enviar. Reportar `true` cuando la
       // persona dijo que no significa pagar envíos a un teléfono que no va a
       // mostrar nada, e inflar la tasa de entrega con ellos.
