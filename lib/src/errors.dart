@@ -14,6 +14,15 @@ enum AkPushErrorCode {
   /// No hubo respuesta: red, DNS o tiempo agotado. Transitorio.
   network,
 
+  /// El comercio exige que el `userId` venga firmado, y la firma falta o no
+  /// coincide.
+  ///
+  /// Tiene código propio y no se mezcla con [unauthorized] porque el arreglo es
+  /// otro: la llave está bien, lo que falta es que **el backend del comercio**
+  /// calcule el HMAC del `userId` y la aplicación lo pase en `identify()`.
+  /// Decir «no autorizado» manda a revisar la llave, que no tiene nada que ver.
+  firmaDeIdentidad,
+
   /// El servicio contestó, pero esa ruta no existe.
   ///
   /// Casi siempre es la dirección mal configurada. Tiene código propio porque

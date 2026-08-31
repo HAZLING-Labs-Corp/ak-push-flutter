@@ -631,8 +631,30 @@ esperar sirve.
 | `firebaseInit` | tu app ya inicializó Firebase con otra cuenta — ver abajo | no |
 | `permissionDenied` | la persona no dio permiso. **No es un fallo, es una respuesta** — el permiso se consulta con `estadoDelPermiso()`, no se atrapa como error | no |
 | `notInitialized` | llamaste a `identify()` o `logout()` antes de que `init()` terminara | no |
+| `firmaDeIdentidad` | tu comercio exige el `userId` firmado, y la firma falta o no coincide | no |
+| `rutaNoEncontrada` | la dirección está mal configurada | no |
 | `unknown` | algo falló y no se pudo clasificar. El detalle está en `details`, y aparece en el diagnóstico como «último error» | no |
 | `network` · `serviceUnavailable` | no hubo respuesta, o el servicio no está | **sí** |
+
+### Sobre `firmaDeIdentidad`
+
+Tu comercio puede exigir que el `userId` venga **firmado**, para que nadie que
+descomprima el APK pueda registrarse como otra persona y recibir sus avisos.
+
+La firma es un HMAC del `userId` con un secreto que sólo conocen tu comercio y
+el servicio. **La calcula tu backend, nunca la app** — en la app sería tan
+legible como la llave.
+
+```dart
+// tu backend te devuelve la firma junto con la sesión
+final r = await AkPush.alIniciarSesion(
+  userId: 'u_8891',
+  identityHash: sesion.firmaDePush,
+);
+```
+
+Si te da este error, no revises la llave: falta que tu backend calcule y mande
+la firma.
 
 ### Sobre `firebaseInit`
 

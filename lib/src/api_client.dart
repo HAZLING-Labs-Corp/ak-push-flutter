@@ -197,6 +197,10 @@ class AkPushApi {
     final detalle = json['error'] as String?;
 
     final codigo = switch (respuesta.statusCode) {
+      // El comercio encendió la verificación de identidad y esta llamada no
+      // trae una firma válida. No es un problema de la llave.
+      403 when json['error'] == 'identidad_no_verificada' =>
+        AkPushErrorCode.firmaDeIdentidad,
       401 || 403 => AkPushErrorCode.unauthorized,
       // 🔴 Hay DOS clases de 404 y confundirlas manda a buscar en el lugar
       // equivocado.

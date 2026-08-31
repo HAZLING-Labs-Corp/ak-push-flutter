@@ -15,6 +15,8 @@ void main() {
         AkPushErrorCode.permissionDenied,
         AkPushErrorCode.firebaseInit,
         AkPushErrorCode.notInitialized,
+        AkPushErrorCode.firmaDeIdentidad,
+        AkPushErrorCode.rutaNoEncontrada,
       ]) {
         expect(AkPushError(c, 'x').retryable, isFalse, reason: c.name);
       }
