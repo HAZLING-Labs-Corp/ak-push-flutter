@@ -6,10 +6,6 @@ import 'personas_de_prueba.dart';
 /// El `10.0.2.2` es cómo un emulador de Android alcanza el localhost de la
 /// máquina que lo hospeda.
 const _llave = String.fromEnvironment('AKPUSH_KEY', defaultValue: 'pk_demo.local');
-// El comercio y la llave se pasan por --dart-define. Los valores por defecto son
-// de la app de prueba nuestra: para usar esto con tu comercio hay que cambiar
-// además el identificador del paquete — ver el README.
-const _comercio = String.fromEnvironment('AKPUSH_COMERCIO', defaultValue: 'juan_push');
 const _url = String.fromEnvironment('AKPUSH_URL', defaultValue: 'http://10.0.2.2:3096');
 
 void main() {
@@ -61,7 +57,6 @@ class _PantallaState extends State<Pantalla> {
       // persona inicia sesión. Es el momento en que ya sabe qué es la app.
       await AkPush.init(
         llave: _llave,
-        comercio: _comercio,
         url: _url,
         pedirPermisoAlIniciar: false,
       );
@@ -69,7 +64,9 @@ class _PantallaState extends State<Pantalla> {
         _estado = 'listo';
         _token = AkPush.token;
       });
-      _anotar('configuración recibida · política: ${AkPush.politica.momento.name}');
+      // El comercio no se configura: la configuración lo dice.
+      _anotar('configuración de ${AkPush.comercio} · política: '
+          '${AkPush.politica.momento.name}');
 
       AkPush.onMessage.listen((m) => _anotar('llegó: ${m.title ?? "(sin título)"}'));
       AkPush.onNotificationTap.listen((m) => _anotar('tocado: ${m.title ?? m.codeEvent ?? "?"}'));
