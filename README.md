@@ -405,14 +405,22 @@ AkPush.onNotificationTap.listen((m) {
 (el envío), `codeEvent` (el aviso) y `signal` (los avisos que solo te dicen «andá
 a revisar algo»).
 
-La entrega y la apertura las contamos nosotros. Las otras tres acciones dependen
-de cómo esté hecha tu app, así que las reportás vos:
+La entrega y la apertura las contamos nosotros —también cuando el aviso llega
+con la app cerrada o en segundo plano, que es el caso normal—. Las otras tres
+acciones dependen de cómo esté hecha tu app, así que las reportás vos:
 
 ```dart
 await AkPush.reportar(mensaje, AccionDePush.viewed);      // lo vio sin abrirlo
 await AkPush.reportar(mensaje, AccionDePush.dismissed);   // lo descartó
 await AkPush.reportar(mensaje, AccionDePush.expired);     // caducó
 ```
+
+> **La tasa de entrega es una cota inferior, no un número exacto.** Para acusar
+> recibo con la app cerrada, el sistema operativo tiene que despertarla, y no
+> siempre lo hace: en iOS el envío necesita `content-available`, y tanto Android
+> como iOS se reservan el derecho de no despertar una app que el usuario no
+> abre nunca o que tiene la batería baja. Lo que ves entregado, llegó. Lo que
+> ves sin entregar puede haber llegado igual.
 
 ---
 

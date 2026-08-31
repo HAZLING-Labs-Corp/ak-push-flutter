@@ -108,6 +108,7 @@ class ConfigStore {
   static const _claveHuella = 'akpush.huella';
   static const _clavePregunta = 'akpush.ultimaPregunta';
   static const _claveConsentimiento = 'akpush.consentimiento';
+  static const _claveCredencial = 'akpush.credencial';
 
   Future<AkPushConfig?> leer() async {
     final prefs = await SharedPreferences.getInstance();
@@ -196,6 +197,36 @@ class ConfigStore {
   Future<void> guardarConsentimiento(Consentimiento c) async =>
       (await SharedPreferences.getInstance())
           .setString(_claveConsentimiento, jsonEncode(c.toJson()));
+
+  /// La llave y la URL, para que el manejador de segundo plano las encuentre.
+  ///
+  /// 🔴 Esto existe por una razón concreta: **el manejador de segundo plano
+  /// corre en otro isolate**. No ve los estáticos de `AkPush`, así que no tiene
+  /// ni el cliente ni la llave. `SharedPreferences` sí cruza el isolate, y es
+  /// el único camino para que un aviso recibido con la aplicación cerrada
+  /// pueda acusar recibo.
+  ///
+  /// No agrega exposición: esta es la llave `devices:write`, la que viaja
+  /// dentro del paquete publicado y es legible por construcción. Por eso no
+  /// puede enviar — ver [AkPushErrorCode.unauthorized] y el README.
+  Future<void> guardarCredencial(String llave, String url) async =>
+      (await SharedPreferences.getInstance()).setString(
+          _claveCredencial, jsonEncode({'llave': llave, 'url': url}));
+
+  Future<({String llave, String url})?> leerCredencial() async {
+    final crudo =
+        (await SharedPreferences.getInstance()).getString(_claveCredencial);
+    if (crudo == null) return null;
+    try {
+      final j = jsonDecode(crudo) as Map<String, dynamic>;
+      final llave = j['llave'] as String?;
+      final url = j['url'] as String?;
+      if (llave == null || url == null) return null;
+      return (llave: llave, url: url);
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<void> olvidarSesion() async {
     final prefs = await SharedPreferences.getInstance();

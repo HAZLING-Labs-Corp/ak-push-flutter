@@ -30,7 +30,35 @@ import 'ruta.dart';
 /// pendiente, y **mientras tanto la entrega en segundo plano no se cuenta** —
 /// que es el caso más común. Es un límite conocido, no un descuido.
 @pragma('vm:entry-point')
-Future<void> manejadorDeSegundoPlano(RemoteMessage mensaje) async {}
+@pragma('vm:entry-point')
+Future<void> manejadorDeSegundoPlano(RemoteMessage mensaje) async {
+  // 🔴 Esto corre en OTRO ISOLATE. No hay `AkPush`, no hay `_api`, no hay nada
+  // de lo que dejó `init()`: ese estado vive en el isolate principal y acá no
+  // existe. Todo lo que haga falta hay que releerlo de `SharedPreferences`,
+  // que es lo único compartido.
+  //
+  // Por qué vale la pena el rodeo: el caso NORMAL de una notificación es
+  // llegar con la aplicación cerrada. Si sólo acusa recibo la que llega con la
+  // app abierta, la consola muestra «aceptado» en la mayoría de los avisos que
+  // sí llegaron, y eso se lee como una falla de entrega que no existe.
+  final id = mensaje.data['pushLogId'] as String?;
+  if (id == null) return;
+
+  try {
+    final credencial = await ConfigStore().leerCredencial();
+    if (credencial == null) return;
+
+    await AkPushApi(apiKey: credencial.llave, baseUrl: credencial.url)
+        .reportarEvento(
+      pushLogId: id,
+      accion: AccionDePush.delivered.valor,
+      estadoApp: 'BACKGROUND',
+    );
+  } catch (_) {
+    // Igual que en el isolate principal: una medición nunca puede tumbar la
+    // entrega del aviso. Un acuse perdido cuesta un dato.
+  }
+}
 
 /// Recibir notificaciones push con una llave y una línea.
 ///
@@ -300,11 +328,13 @@ class AkPush {
     try {
       final datos = await DatosDelDispositivo.recolectar();
 
-      _api = AkPushApi(
-        apiKey: apiKey,
-        baseUrl: AkPushApi.normalizarUrl(
-            baseUrl ?? 'https://api-push.creditotal.online'),
-      );
+      final urlNormalizada = AkPushApi.normalizarUrl(
+          baseUrl ?? 'https://api-push.creditotal.online');
+
+      _api = AkPushApi(apiKey: apiKey, baseUrl: urlNormalizada);
+
+      // Para el isolate de segundo plano, que no ve nada de esto. Ver H-09.
+      await _almacen.guardarCredencial(apiKey, urlNormalizada);
 
       _consentimiento = await _almacen.leerConsentimiento();
 
