@@ -1,0 +1,259 @@
+import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:hz_collection_sdk/hz_collection_sdk.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+
+/// QUÉ SE RECOLECTÓ DE ESTE APARATO — a la vista de quien lo presta.
+///
+/// 🔴 No es una pantalla de depuración. Un colector de datos que no le deja ver a la
+/// persona qué recolectó es exactamente lo que la gente desconfía, y con razón. Que esté
+/// acá, en la misma aplicación y sin buscarla, es lo que hace defendible pedir el permiso.
+///
+/// Del lado del comercio sirve para otra cosa: es el molde de la pantalla «tus datos» que
+/// va a tener que mostrar el día que alguien se la pida.
+class LoRecolectado extends StatefulWidget {
+  const LoRecolectado({super.key});
+
+  @override
+  State<LoRecolectado> createState() => _LoRecolectadoState();
+}
+
+class _LoRecolectadoState extends State<LoRecolectado> {
+  Map<String, dynamic>? _delAparato;
+  Diagnostico? _diag;
+
+  @override
+  void initState() {
+    super.initState();
+    _leer();
+  }
+
+  Future<void> _leer() async {
+    final d = await DatosDelDispositivo.recolectar();
+    final g = await AkPush.diagnostico();
+    if (mounted) setState(() { _delAparato = d.toJson(); _diag = g; });
+  }
+
+  /// Los seis campos que el SDK manda duplicados en inglés y castellano. Se muestran una
+  /// sola vez: ver dos veces el mismo dato con otro nombre hace dudar de todo lo demás.
+  static const _duplicados = {'ancho','alto','densidad','oscuro','textoGrande','idiomas'};
+
+  /// El nombre técnico traducido. Lo que la persona lee tiene que ser lo que entiende,
+  /// no el nombre de la propiedad.
+  static const _nombres = {
+    'model':'Modelo', 'manufacturer':'Fabricante', 'brand':'Marca',
+    'osVersion':'Versión de Android', 'apiLevel':'Nivel de Android',
+    'appVersion':'Versión de la app', 'deviceId':'Identificador del aparato',
+    'isPhysicalDevice':'¿Es un teléfono de verdad?', 'locale':'Idioma',
+    'preferredLocales':'Idiomas preferidos', 'screenWidth':'Ancho de pantalla',
+    'screenHeight':'Alto de pantalla', 'screenDensity':'Densidad de pantalla',
+    'darkMode':'Modo oscuro', 'largeText':'Texto agrandado',
+    'utcOffsetMinutes':'Huso horario (minutos)', 'timeZoneAbbreviation':'Zona horaria',
+    'identificadorDePaquete':'Paquete de la app', 'plataforma':'Plataforma',
+  };
+
+  String _valor(dynamic v) {
+    if (v == null) return '—';
+    if (v is bool) return v ? 'Sí' : 'No';
+    if (v is List) return v.isEmpty ? '—' : v.join(', ');
+    return '$v';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final d = _delAparato;
+    if (d == null) return const Center(child: CircularProgressIndicator());
+
+    final campos = d.entries.where((e) => !_duplicados.contains(e.key)).toList()
+      ..sort((a, b) => (_nombres[a.key] ?? a.key).compareTo(_nombres[b.key] ?? b.key));
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text('Del aparato', style: t.textTheme.titleMedium),
+        Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 12),
+          child: Text(
+            'Esto se lee solo, sin pedirte ningún permiso. Son ${campos.length} datos '
+            'y ninguno dice quién sos.',
+            style: t.textTheme.bodySmall?.copyWith(color: t.colorScheme.onSurfaceVariant),
+          ),
+        ),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Column(children: [
+            for (final e in campos)
+              ListTile(
+                dense: true,
+                title: Text(_nombres[e.key] ?? e.key, style: t.textTheme.bodyMedium),
+                trailing: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 190),
+                  child: Text(_valor(e.value),
+                      textAlign: TextAlign.end,
+                      style: t.textTheme.bodyMedium
+                          ?.copyWith(color: t.colorScheme.onSurfaceVariant)),
+                ),
+              ),
+          ]),
+        ),
+        const SizedBox(height: 24),
+        Text('De la sesión', style: t.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            // El diagnóstico ya está escrito para leerse: dice qué pasa y cuál es el
+            // eslabón roto, en castellano. No hace falta reescribirlo acá.
+            child: SelectableText(_diag?.toString() ?? '—',
+                style: t.textTheme.bodySmall?.copyWith(fontFamily: 'monospace')),
+          ),
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+}
+
+/// DÓNDE ESTUVO ESTE TELÉFONO — con el mapa, no con una lista de números.
+///
+/// Muestra lo que el SDK leería AHORA. No es el historial del servidor: eso vive del otro
+/// lado y esta aplicación no tiene con qué pedirlo. Sirve para lo que hace falta acá —
+/// comprobar que la lectura funciona y ver con qué precisión.
+class DondeEstuvo extends StatefulWidget {
+  const DondeEstuvo({super.key});
+
+  @override
+  State<DondeEstuvo> createState() => _DondeEstuvoState();
+}
+
+class _DondeEstuvoState extends State<DondeEstuvo> {
+  Position? _pos;
+  String? _motivo;
+  bool _buscando = false;
+  WebViewController? _mapa;
+
+  @override
+  void initState() {
+    super.initState();
+    _mirar();
+  }
+
+  Future<void> _mirar() async {
+    setState(() { _buscando = true; _motivo = null; });
+    try {
+      if (!await AkPush.tieneUbicacion) {
+        setState(() { _motivo = 'sin permiso'; _buscando = false; });
+        return;
+      }
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        setState(() { _motivo = 'el teléfono tiene la ubicación apagada'; _buscando = false; });
+        return;
+      }
+      // La misma escalera que usa el SDK: primero lo barato, después lo que engancha.
+      Position? p;
+      for (final a in [LocationAccuracy.low, LocationAccuracy.medium]) {
+        try {
+          p = await Geolocator.getCurrentPosition(
+            locationSettings: LocationSettings(accuracy: a, timeLimit: const Duration(seconds: 12)));
+          break;
+        } catch (_) {/* se prueba la siguiente */}
+      }
+      p ??= await Geolocator.getLastKnownPosition();
+      if (p == null) {
+        setState(() { _motivo = 'el sistema no devolvió ninguna posición'; _buscando = false; });
+        return;
+      }
+      final c = WebViewController()
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..loadRequest(Uri.parse(
+          // Un recuadro alrededor del punto: al zoom fijo, una posición aproximada se ve
+          // como si fuera exacta, y eso es afirmar de más.
+          'https://www.openstreetmap.org/export/embed.html'
+          '?bbox=${p.longitude - 0.02},${p.latitude - 0.02},'
+          '${p.longitude + 0.02},${p.latitude + 0.02}'
+          '&layer=mapnik&marker=${p.latitude},${p.longitude}'));
+      if (mounted) setState(() { _pos = p; _mapa = c; _buscando = false; });
+    } catch (e) {
+      if (mounted) setState(() { _motivo = 'falló: $e'; _buscando = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    if (_buscando) return const Center(child: CircularProgressIndicator());
+
+    if (_pos == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.location_off_outlined, size: 40, color: t.colorScheme.outline),
+            const SizedBox(height: 12),
+            Text('Sin ubicación', style: t.textTheme.titleMedium),
+            const SizedBox(height: 6),
+            Text(_motivo ?? 'todavía no se pudo leer',
+                textAlign: TextAlign.center,
+                style: t.textTheme.bodyMedium
+                    ?.copyWith(color: t.colorScheme.onSurfaceVariant)),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: () async {
+                if (_motivo == 'sin permiso') await AkPush.ofrecerUbicacion(context);
+                await _mirar();
+              },
+              icon: const Icon(Icons.refresh),
+              label: Text(_motivo == 'sin permiso' ? 'Dar permiso' : 'Probar de nuevo'),
+            ),
+          ]),
+        ),
+      );
+    }
+
+    final p = _pos!;
+    return Column(children: [
+      Expanded(child: _mapa == null
+          ? const SizedBox()
+          : WebViewWidget(controller: _mapa!)),
+      Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Tu zona', style: t.textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            '${p.latitude.toStringAsFixed(4)}, ${p.longitude.toStringAsFixed(4)}  ·  '
+            'con un margen de ${p.accuracy.round()} metros',
+            style: t.textTheme.bodyMedium?.copyWith(color: t.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Es la zona, no la dirección: se pide precisión baja a propósito.',
+            style: t.textTheme.bodySmall?.copyWith(color: t.colorScheme.outline),
+          ),
+          const SizedBox(height: 12),
+          Row(children: [
+            OutlinedButton.icon(
+              onPressed: _mirar,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Volver a leer'),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.icon(
+              onPressed: () async {
+                final fue = await AkPush.reportarUbicacion(forzar: true);
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(fue ? 'Se mandó al servidor' : 'No se pudo mandar'),
+                ));
+              },
+              icon: const Icon(Icons.cloud_upload_outlined, size: 18),
+              label: const Text('Mandar ahora'),
+            ),
+          ]),
+        ]),
+      ),
+    ]);
+  }
+}

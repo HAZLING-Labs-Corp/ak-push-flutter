@@ -326,4 +326,25 @@ class AkPushApi {
 
     throw AkPushError(codigo, mensaje, details: detalle);
   }
+
+  /// LO QUE SE MIDIÓ DEL APARATO — el módulo `aparato`.
+  ///
+  /// Va a la instalación, no al sujeto: lo que se midió lo midió un teléfono, y una persona
+  /// puede tener dos. Y es un mapa abierto a propósito: cada módulo manda lo suyo sin que
+  /// esta firma tenga que cambiar cada vez.
+  Future<void> reportarSenales({
+    required String sujetoId,
+    required String instalacionId,
+    required Map<String, dynamic> senales,
+  }) async {
+    await _pedir(() => _cliente.post(
+          Uri.parse('$baseUrl/api/v1/senales'),
+          headers: _cabeceras,
+          body: jsonEncode({
+            'sujetoId': sujetoId,
+            'instalacionId': instalacionId,
+            'senales': senales,
+          }),
+        ));
+  }
 }

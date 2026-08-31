@@ -37,6 +37,12 @@ export 'src/sesion.dart'
 // AkPush.pedirPermiso(): sin este export nadie puede nombrarlo para guardarlo en
 // una variable. `GestorDePermiso` queda adentro, detrás de la fachada.
 export 'src/permiso.dart' show EstadoDelPermiso;
+// QUÉ SE RECOLECTA DE ESTE APARATO, para que la aplicación lo pueda MOSTRAR.
+//
+// 🔴 No es un extra de la demo: un colector de datos que no le deja ver a la persona
+// qué recolectó es exactamente lo que la gente desconfía. Y del lado del comercio, es
+// lo que le permite armar su propia pantalla de «tus datos» sin pedirnos nada.
+export 'src/device_info.dart' show DatosDelDispositivo;
 // La campanita hecha, y el estado de los avisos en castellano. Quien quiera dibujar
 // su propia campana usa `EstadoDeAvisos` + `AkPush.avisos` + `AkPush.resolverAvisos()`;
 // quien no quiera dibujar nada pone `AkPush.campanita()` y listo.

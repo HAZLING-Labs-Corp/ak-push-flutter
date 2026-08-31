@@ -4,6 +4,7 @@ import 'package:hz_collection_sdk/hz_collection_sdk.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 
+import 'lo_recolectado.dart';
 import 'personas_de_prueba.dart';
 
 /// El `10.0.2.2` es cómo un emulador de Android alcanza el localhost de la
@@ -66,6 +67,9 @@ class Pantalla extends StatefulWidget {
 
 class _PantallaState extends State<Pantalla> {
   final List<String> _bitacora = [];
+
+  /// Qué pestaña se está mirando: 0 sesión · 1 datos · 2 ubicación.
+  int _vista = 0;
   String _estado = 'iniciando…';
   String? _token;
   PersonaDePrueba? _dentro;
@@ -250,7 +254,34 @@ class _PantallaState extends State<Pantalla> {
           ),
         ],
       ),
-      body: ListView(
+      // ── LAS TRES VISTAS ────────────────────────────────────────────────────
+      //
+      // «Sesión» es lo que había: el estado y quién entró. Las otras dos son para VER lo
+      // que se recolecta — y eso no es una comodidad de la demo: un colector que no le
+      // deja mirar a la persona qué se llevó es lo que hace que la gente desconfíe.
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _vista,
+        onDestinationSelected: (i) => setState(() => _vista = i),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.badge_outlined),
+            selectedIcon: Icon(Icons.badge),
+            label: 'Sesión'),
+          NavigationDestination(
+            icon: Icon(Icons.storage_outlined),
+            selectedIcon: Icon(Icons.storage),
+            label: 'Datos'),
+          NavigationDestination(
+            icon: Icon(Icons.place_outlined),
+            selectedIcon: Icon(Icons.place),
+            label: 'Ubicación'),
+        ],
+      ),
+      body: _vista == 1
+          ? const LoRecolectado()
+          : _vista == 2
+              ? const DondeEstuvo()
+              : ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Card(
