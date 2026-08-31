@@ -130,6 +130,11 @@ class ConfigStore {
   /// al revés.
   static const _claveOfertaUbicacion = 'akpush.ofertaUbicacion';
 
+  /// Cuándo se le avisó por última vez que el TELÉFONO tiene la ubicación apagada.
+  /// Clave propia, separada de la oferta: son dos avisos con dos causas distintas, y
+  /// compartir la fecha haría que uno tapara al otro durante semanas.
+  static const _claveAvisoServicio = 'akpush.avisoServicioUbicacion';
+
   Future<AkPushConfig?> leer() async {
     final prefs = await SharedPreferences.getInstance();
     final crudo = prefs.getString(_claveConfig);
@@ -201,6 +206,17 @@ class ConfigStore {
   Future<Duration?> desdeLaUltimaOfertaDeUbicacion() async {
     final crudo =
         (await SharedPreferences.getInstance()).getString(_claveOfertaUbicacion);
+    final cuando = crudo == null ? null : DateTime.tryParse(crudo);
+    return cuando == null ? null : DateTime.now().difference(cuando);
+  }
+
+  Future<void> guardarAvisoDeServicio(DateTime cuando) async =>
+      (await SharedPreferences.getInstance())
+          .setString(_claveAvisoServicio, cuando.toIso8601String());
+
+  Future<Duration?> desdeElAvisoDeServicio() async {
+    final crudo =
+        (await SharedPreferences.getInstance()).getString(_claveAvisoServicio);
     final cuando = crudo == null ? null : DateTime.tryParse(crudo);
     return cuando == null ? null : DateTime.now().difference(cuando);
   }

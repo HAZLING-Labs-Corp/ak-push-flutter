@@ -360,7 +360,11 @@ class AkPush {
     try {
       // 🔴 Si ya está concedido no se pregunta de nuevo. Un modal que pide algo que
       // la persona ya dio es la clase de detalle que hace que se desconfíe del resto.
-      if (await _ubicacion.concedido) return true;
+      if (await _ubicacion.concedido) {
+        // Pero puede faltarle el otro interruptor. Ver [_avisarSiFaltaElServicio].
+        await _avisarSiFaltaElServicio();
+        return true;
+      }
 
       // Y si el sistema ya no muestra el diálogo —dijo que no dos veces—, levantar el
       // modal sería mentirle: acepta, no pasa nada, y no hay forma de explicarle por
@@ -431,12 +435,7 @@ class AkPush {
       //
       // Se le avisa en el momento, que es cuando la persona todavía está pensando en
       // esto y acaba de decir que sí. Un aviso media hora después no lo lee nadie.
-      if (!await _ubicacion.servicioPrendido) {
-        final ctx2 = navegador.currentContext;
-        if (ctx2 != null && ctx2.mounted) {
-          final ir = await ModalDeUbicacion.mostrarServicioApagado(ctx2);
-          if (ir) await _ubicacion.abrirAjustesDeUbicacion();
-        }
+      if (await _avisarSiFaltaElServicio()) {
         // Se devuelve `true` igual: el permiso QUEDÓ concedido, que es lo que preguntó
         // quien llamó. Lo que falta es del teléfono, no de esta persona, y en cuanto
         // prenda la ubicación las posiciones empiezan a llegar solas.
@@ -736,6 +735,42 @@ class AkPush {
   // notificaciones... yo voy a hacer el front ahí, pero me voy a servir de los
   // servicios del SDK»*. Por eso van los servicios sueltos Y la campanita hecha:
   // quien quiera dibujar lo suyo tiene con qué, y quien no, la pone en una línea.
+
+  /// 🔴 EL SEGUNDO INTERRUPTOR: LA UBICACIÓN DEL TELÉFONO.
+  ///
+  /// Tener el permiso no alcanza. Si el teléfono tiene la ubicación apagada no llega
+  /// ninguna posición, y hasta el 2026-08-31 eso pasaba **sin un solo error**: se leía
+  /// null y el catch se lo tragaba. En la consola la persona figuraba «con permiso, cero
+  /// ubicaciones», que parece un sistema roto y no lo es.
+  ///
+  /// Se avisa en los dos caminos —al conceder el permiso, y al iniciar sesión de quien
+  /// ya lo tenía—, porque alguien puede haber apagado el interruptor meses después de
+  /// haber dado el permiso y nadie se enteraría nunca.
+  ///
+  /// Con su propio freno, y bien separado del de la oferta de ubicación: son dos avisos
+  /// distintos, con dos causas distintas, y compartir la fecha haría que uno tapara al
+  /// otro. Devuelve si faltaba el servicio.
+  Future<bool> _avisarSiFaltaElServicio() async {
+    if (await _ubicacion.servicioPrendido) return false;
+
+    final desde = await _almacen.desdeElAvisoDeServicio();
+    // Una semana. Es un interruptor que la gente apaga a propósito —para ahorrar
+    // batería— y recordárselo todos los días sería hostigar; no recordárselo nunca
+    // es perder a alguien que ya dijo que sí y sólo le falta un toque.
+    if (desde != null && desde.inDays < 7) return true;
+
+    // Se anota antes de buscar el contexto, para no dejar `await` alguno entre tomar
+    // el contexto y dibujar: en ese hueco la aplicación puede haber cambiado de
+    // pantalla, y el modal se colgaría de un árbol que ya no existe.
+    await _almacen.guardarAvisoDeServicio(DateTime.now());
+
+    final ctx = navegador.currentContext;
+    if (ctx == null || !ctx.mounted) return true;
+
+    final ir = await ModalDeUbicacion.mostrarServicioApagado(ctx);
+    if (ir) await _ubicacion.abrirAjustesDeUbicacion();
+    return true;
+  }
 
   /// Cómo están los avisos, en lenguaje llano y con qué ofrecerle a la persona.
   static Future<EstadoDeAvisos> estadoDeAvisos() async =>
