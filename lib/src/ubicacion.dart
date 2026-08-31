@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:geolocator/geolocator.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import 'api_client.dart';
 
@@ -63,8 +62,20 @@ class Ubicacion {
   DateTime? ultimoEnvio;
 
   /// ¿Ya está concedido?
-  Future<bool> get concedido async =>
-      await Permission.locationWhenInUse.isGranted;
+  ///
+  /// 🔴 Se pregunta con `geolocator` y no con `permission_handler`, y no es indistinto:
+  /// `permission_handler` declara `MANAGE_EXTERNAL_STORAGE` y
+  /// `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` en su propio manifest, y el fusionador de
+  /// Android los inyecta en **cualquier aplicación que instale este SDK**, la use o no.
+  /// El primero además obliga a llenar un formulario especial en Google Play.
+  ///
+  /// Es exactamente el error que le vimos a CredoLab en Credit CX: permisos declarados
+  /// que la aplicación nunca pide, arruinando la ficha por datos que jamás va a obtener.
+  /// `geolocator` hace lo mismo sin declarar nada.
+  Future<bool> get concedido async {
+    final p = await Geolocator.checkPermission();
+    return p == LocationPermission.always || p == LocationPermission.whileInUse;
+  }
 
   /// 🔴 ¿EL TELÉFONO TIENE LA UBICACIÓN PRENDIDA?
   ///
@@ -93,8 +104,11 @@ class Ubicacion {
   /// con un diálogo que el sistema ya no muestra no hace nada salvo confundir
   /// a quien programa.
   Future<bool> get sePuedePreguntar async {
-    final s = await Permission.locationWhenInUse.status;
-    return !s.isPermanentlyDenied && !s.isGranted;
+    final p = await Geolocator.checkPermission();
+    // `deniedForever` es el «no» definitivo: el sistema ya no muestra el diálogo.
+    return p != LocationPermission.deniedForever &&
+        p != LocationPermission.always &&
+        p != LocationPermission.whileInUse;
   }
 
   /// Pide el permiso. Devuelve si quedó concedido.
@@ -102,8 +116,8 @@ class Ubicacion {
   /// Se llama cuando la aplicación lo decide —después de explicar para qué
   /// sirve— y nunca en el arranque en frío.
   Future<bool> pedir() async {
-    final s = await Permission.locationWhenInUse.request();
-    return s.isGranted;
+    final p = await Geolocator.requestPermission();
+    return p == LocationPermission.always || p == LocationPermission.whileInUse;
   }
 
   /// Lee la posición y la manda, si corresponde.

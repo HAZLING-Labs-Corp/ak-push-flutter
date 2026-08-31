@@ -33,7 +33,10 @@ dependencies:
   # Firebase alcanza para leer y pedir el permiso —incluso para distinguir un
   # «no» reversible de uno definitivo—, pero no tiene forma de abrir esa
   # pantalla, y este paquete no tiene lado nativo propio donde escribirla.
-  permission_handler: ^12.0.3
+  # 🔴 permission_handler SACADO el 2026-08-31: declaraba MANAGE_EXTERNAL_STORAGE y
+  # REQUEST_IGNORE_BATTERY_OPTIMIZATIONS en su manifest y se los inyectaba a toda
+  # aplicación que instalara este SDK. Ver ubicacion.dart y permiso.dart.
+  app_settings: ^5.1.1
 
   # Metadata del dispositivo que viaja con el alta. Es opcional por diseño:
   # si no se puede leer, el alta sigue igual.
