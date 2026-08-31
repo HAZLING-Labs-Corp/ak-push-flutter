@@ -29,6 +29,14 @@ class DatosDelDispositivo {
     this.esFisico,
     this.zonaHorariaAbreviada,
     this.idioma,
+    this.nivelDeApi,
+    this.anchoDePantalla,
+    this.altoDePantalla,
+    this.densidad,
+    this.modoOscuro,
+    this.textoAgrandado,
+    this.idiomasPreferidos,
+    this.reloj24Horas,
   });
 
   final String identificadorDePaquete;
@@ -40,6 +48,49 @@ class DatosDelDispositivo {
   final String? versionDelSistema;
   final String? versionDeLaApp;
   final bool? esFisico;
+
+  // ── Características del aparato que hacen falta para dibujar bien el aviso ──
+  //
+  // Todo lo que sigue lo entrega la propia plataforma de Flutter, sin canal
+  // nativo y sin ningún diálogo. Es la misma telemetría que declaran los SDK de
+  // push del mercado, y sirve para dos cosas concretas: decidir cómo se ve el
+  // aviso en ESTE teléfono, y tener el inventario del parque.
+  //
+  // 🔴 Aunque no pida permiso, ES DATO RECOLECTADO: va declarado en el
+  // formulario de seguridad de datos de Google Play y en las etiquetas de
+  // privacidad de Apple. Publicar sin declararlo saca la aplicación de la
+  // tienda, y eso no se descubre hasta el rechazo.
+
+  /// Nivel de API de Android (34 = Android 14).
+  ///
+  /// Decide qué se puede hacer: el permiso de notificaciones sólo existe desde
+  /// el 33, y por debajo se da por concedido. Sin este dato, «no dio permiso» y
+  /// «su Android es viejo y no hay permiso que dar» se ven exactamente iguales
+  /// en la consola, y son problemas distintos.
+  final int? nivelDeApi;
+
+  /// Pantalla en píxeles físicos y su densidad. Es lo que dice si la imagen que
+  /// se manda con el aviso se va a ver bien o pixelada en este teléfono.
+  final int? anchoDePantalla;
+  final int? altoDePantalla;
+  final double? densidad;
+
+  /// Si el teléfono está en modo oscuro. Decide qué versión del ícono se ve: uno
+  /// pensado para fondo claro desaparece en modo oscuro.
+  final bool? modoOscuro;
+
+  /// Si la persona agrandó el texto del sistema. Un título que entra en una
+  /// línea a tamaño normal ocupa tres al 200%, y el aviso queda cortado.
+  final bool? textoAgrandado;
+
+  /// Todos los idiomas configurados, en orden. `idioma` es sólo el primero:
+  /// alguien con el teléfono en inglés y español segundo entiende perfectamente
+  /// un aviso en español, y con un solo idioma eso no se puede saber.
+  final List<String>? idiomasPreferidos;
+
+  /// Si usa reloj de 24 horas. Decide cómo se escribe una hora dentro del texto
+  /// del aviso.
+  final bool? reloj24Horas;
 
   // ── Cuándo y en qué idioma ──────────────────────────────────────────────
   //
@@ -110,7 +161,38 @@ class DatosDelDispositivo {
         // —idioma y región—, y porque es el nombre con el que el servicio ya
         // guarda este dato.
         if (idioma != null) 'locale': idioma,
+        if (nivelDeApi != null) 'apiLevel': nivelDeApi,
+        if (anchoDePantalla != null) 'screenWidth': anchoDePantalla,
+        if (altoDePantalla != null) 'screenHeight': altoDePantalla,
+        if (densidad != null) 'screenDensity': densidad,
+        if (modoOscuro != null) 'darkMode': modoOscuro,
+        if (textoAgrandado != null) 'largeText': textoAgrandado,
+        if (idiomasPreferidos != null && idiomasPreferidos!.isNotEmpty)
+          'preferredLocales': idiomasPreferidos,
+        if (reloj24Horas != null) 'clock24h': reloj24Horas,
       };
+
+  /// Lo que la plataforma de Flutter entrega directamente, sin canal nativo.
+  ///
+  /// Degrada y no falla: perder el modo oscuro cuesta un ícono que se ve mal;
+  /// perder el alta cuesta que esa persona no reciba nada.
+  static Map<String, dynamic> _delSistema() {
+    try {
+      final d = PlatformDispatcher.instance;
+      final v = d.views.isNotEmpty ? d.views.first : null;
+      return {
+        if (v != null) 'ancho': v.physicalSize.width.round(),
+        if (v != null) 'alto': v.physicalSize.height.round(),
+        if (v != null) 'densidad': v.devicePixelRatio,
+        'oscuro': d.platformBrightness == Brightness.dark,
+        'textoGrande': d.textScaleFactor > 1.15,
+        'idiomas': d.locales.map((l) => l.toLanguageTag()).toList(),
+        'reloj24': d.alwaysUse24HourFormat,
+      };
+    } catch (_) {
+      return const {};
+    }
+  }
 
   static Future<DatosDelDispositivo> recolectar() async {
     final paquete = await _leerPaquete();
@@ -122,6 +204,7 @@ class DatosDelDispositivo {
     final desfase = DateTime.now().timeZoneOffset.inMinutes;
     final zona = _zonaHorariaAbreviada();
     final idioma = _idiomaDelAparato();
+    final sis = _delSistema();
 
     try {
       final info = DeviceInfoPlugin();
@@ -138,9 +221,17 @@ class DatosDelDispositivo {
           versionDelSistema: a.version.release,
           versionDeLaApp: paquete.$2,
           esFisico: a.isPhysicalDevice,
+          nivelDeApi: a.version.sdkInt,
           desfaseUtcMinutos: desfase,
           zonaHorariaAbreviada: zona,
           idioma: idioma,
+          anchoDePantalla: sis['ancho'] as int?,
+          altoDePantalla: sis['alto'] as int?,
+          densidad: sis['densidad'] as double?,
+          modoOscuro: sis['oscuro'] as bool?,
+          textoAgrandado: sis['textoGrande'] as bool?,
+          idiomasPreferidos: (sis['idiomas'] as List?)?.cast<String>(),
+          reloj24Horas: sis['reloj24'] as bool?,
         );
       }
 
@@ -159,6 +250,13 @@ class DatosDelDispositivo {
           desfaseUtcMinutos: desfase,
           zonaHorariaAbreviada: zona,
           idioma: idioma,
+          anchoDePantalla: sis['ancho'] as int?,
+          altoDePantalla: sis['alto'] as int?,
+          densidad: sis['densidad'] as double?,
+          modoOscuro: sis['oscuro'] as bool?,
+          textoAgrandado: sis['textoGrande'] as bool?,
+          idiomasPreferidos: (sis['idiomas'] as List?)?.cast<String>(),
+          reloj24Horas: sis['reloj24'] as bool?,
         );
       }
     } catch (_) {
@@ -172,6 +270,13 @@ class DatosDelDispositivo {
       desfaseUtcMinutos: desfase,
       zonaHorariaAbreviada: zona,
       idioma: idioma,
+      anchoDePantalla: sis['ancho'] as int?,
+      altoDePantalla: sis['alto'] as int?,
+      densidad: sis['densidad'] as double?,
+      modoOscuro: sis['oscuro'] as bool?,
+      textoAgrandado: sis['textoGrande'] as bool?,
+      idiomasPreferidos: (sis['idiomas'] as List?)?.cast<String>(),
+      reloj24Horas: sis['reloj24'] as bool?,
     );
   }
 
