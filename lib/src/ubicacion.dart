@@ -50,6 +50,26 @@ class Ubicacion {
   Future<bool> get concedido async =>
       await Permission.locationWhenInUse.isGranted;
 
+  /// 🔴 ¿EL TELÉFONO TIENE LA UBICACIÓN PRENDIDA?
+  ///
+  /// Es una pregunta DISTINTA de si la aplicación tiene permiso, y confundirlas cuesta
+  /// caro. Medido el 2026-08-31 en un HONOR real: la persona aceptó el modal, aceptó el
+  /// diálogo del sistema, el permiso quedó concedido — y no llegó ni una posición,
+  /// porque el interruptor de ubicación del teléfono estaba apagado. En la consola eso
+  /// se ve como «con permiso, cero posiciones», que parece un sistema roto.
+  ///
+  /// Y no se arregla pidiendo el permiso de nuevo: el permiso ya está. Lo que hay que
+  /// hacer es ofrecerle prender la ubicación del teléfono, que es otro botón y otra
+  /// pantalla de ajustes.
+  Future<bool> get servicioPrendido => Geolocator.isLocationServiceEnabled();
+
+  /// Abre los ajustes de UBICACIÓN del teléfono — no los de la aplicación.
+  ///
+  /// Son dos pantallas distintas: `openAppSettings` lleva a los permisos de esta
+  /// aplicación, que en este caso ya están bien. Mandar ahí a alguien cuyo problema es
+  /// el interruptor general es mandarlo a mirar algo que ya está en verde.
+  Future<bool> abrirAjustesDeUbicacion() => Geolocator.openLocationSettings();
+
   /// ¿Se puede todavía preguntar, o la persona ya dijo que no para siempre?
   ///
   /// La diferencia importa: a quien nunca se le preguntó hay que preguntarle;

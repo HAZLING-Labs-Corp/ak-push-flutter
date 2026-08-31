@@ -63,6 +63,90 @@ class ModalDeUbicacion extends StatelessWidget {
     return r == true;
   }
 
+  /// EL OTRO CASO: EL PERMISO ESTÁ, PERO EL TELÉFONO TIENE LA UBICACIÓN APAGADA.
+  ///
+  /// Pantalla aparte y texto aparte, porque el problema es otro y el botón lleva a otro
+  /// lado —a los ajustes de ubicación del teléfono, no a los permisos de la aplicación,
+  /// que en este caso ya están bien. Reusar el modal de arriba haría que la persona
+  /// vuelva a aceptar algo que ya aceptó y siga sin funcionar.
+  static Future<bool> mostrarServicioApagado(BuildContext context) async {
+    final tema = Theme.of(context);
+    final r = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (c) => SafeArea(
+        child: Container(
+          decoration: BoxDecoration(
+            color: tema.colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 24),
+                  decoration: BoxDecoration(
+                    color: tema.colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: tema.colorScheme.tertiary.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.location_off_outlined,
+                    size: 28, color: tema.colorScheme.tertiary),
+              ),
+              const SizedBox(height: 20),
+              Text('Falta un paso',
+                  style: tema.textTheme.headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 10),
+              Text(
+                'Ya nos diste permiso, gracias. Pero este teléfono tiene la ubicación '
+                'apagada, así que todavía no podemos saber en qué zona estás. Se prende '
+                'desde los ajustes del teléfono.',
+                style: tema.textTheme.bodyMedium?.copyWith(
+                  color: tema.colorScheme.onSurfaceVariant,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: () => Navigator.pop(c, true),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                child: const Text('Prender la ubicación'),
+              ),
+              const SizedBox(height: 4),
+              TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                style: TextButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                  foregroundColor: tema.colorScheme.onSurfaceVariant,
+                ),
+                child: const Text('Ahora no'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return r == true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final tema = Theme.of(context);

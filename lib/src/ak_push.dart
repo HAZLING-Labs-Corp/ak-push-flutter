@@ -419,13 +419,37 @@ class AkPush {
       if (!quiere) return false;
 
       final concedido = await _ubicacion.pedir();
-      // Si aceptó, se manda la primera posición ya: sin esto la consola muestra a
-      // alguien «con ubicación activa» y cero posiciones hasta el próximo arranque,
-      // que parece roto aunque no lo esté.
-      if (concedido && _userId != null) {
+      if (!concedido) return false;
+
+      // 🔴 EL PERMISO NO ALCANZA: FALTA QUE EL TELÉFONO TENGA LA UBICACIÓN PRENDIDA.
+      //
+      // Son dos interruptores distintos y hasta hoy sólo se miraba uno. Medido en un
+      // HONOR real el 2026-08-31: modal aceptado, diálogo del sistema aceptado, permiso
+      // concedido — y cero posiciones, porque el interruptor general estaba apagado. No
+      // hubo ni un error: `_leer()` devolvía null y el catch se lo tragaba. En la
+      // consola se veía «con permiso, sin ubicaciones», que parece el sistema roto.
+      //
+      // Se le avisa en el momento, que es cuando la persona todavía está pensando en
+      // esto y acaba de decir que sí. Un aviso media hora después no lo lee nadie.
+      if (!await _ubicacion.servicioPrendido) {
+        final ctx2 = navegador.currentContext;
+        if (ctx2 != null && ctx2.mounted) {
+          final ir = await ModalDeUbicacion.mostrarServicioApagado(ctx2);
+          if (ir) await _ubicacion.abrirAjustesDeUbicacion();
+        }
+        // Se devuelve `true` igual: el permiso QUEDÓ concedido, que es lo que preguntó
+        // quien llamó. Lo que falta es del teléfono, no de esta persona, y en cuanto
+        // prenda la ubicación las posiciones empiezan a llegar solas.
+        return true;
+      }
+
+      // La primera posición se manda ya: sin esto la consola muestra a alguien «con
+      // ubicación activa» y cero posiciones hasta el próximo arranque, que parece roto
+      // aunque no lo esté.
+      if (_userId != null) {
         await _ubicacion.reportarSiCorresponde(_userId!, forzar: true);
       }
-      return concedido;
+      return true;
     } catch (_) {
       // Nunca tumba nada: perder una ubicación cuesta un dato de segmentación; que
       // falle el inicio de sesión cuesta que esa persona no reciba nada.
@@ -955,6 +979,19 @@ class AkPush {
     // No se espera el resultado: el inicio de sesión de la aplicación no se queda
     // colgado detrás de un modal que la persona puede dejar abierto un minuto.
     unawaited(_ofrecerUbicacion(forzar: false));
+
+    // 🔴 Y A QUIEN YA DIO EL PERMISO, SE LE LEE LA POSICIÓN.
+    //
+    // Sin esta línea la ubicación se mandaba UNA sola vez en la vida —en el mismo
+    // instante de conceder el permiso— y nunca más. Si esa única vez fallaba, no había
+    // segunda: la persona figuraba con ubicación activa y cero posiciones para siempre.
+    // Fue exactamente lo que pasó el 2026-08-31 en un HONOR con el interruptor de
+    // ubicación apagado.
+    //
+    // El freno de seis horas vive adentro de `reportarSiCorresponde`, así que llamarlo
+    // en cada inicio de sesión no gasta batería ni multiplica lecturas: en la mayoría
+    // de las llamadas devuelve `false` sin tocar el GPS.
+    unawaited(_ubicacion.reportarSiCorresponde(userId));
 
     return ResultadoDeSesion(
       puedeRecibir: concedido && _token != null && _registrado,
