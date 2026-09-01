@@ -19,7 +19,9 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:hz_collection_sdk/src/permisologia/campos.dart';
 import 'package:hz_collection_sdk/src/permisologia/catalogo_de_permisos.dart';
+import 'package:hz_collection_sdk/src/permisologia/transformar.dart';
 
 String _nivel(Nivel n) => switch (n) {
       Nivel.ninguno => 'ninguno',
@@ -71,6 +73,30 @@ void main() {
           ],
         },
     ],
+    // 🔴 LAS FICHAS DE CADA CAMPO, por el mismo motivo que los permisos: la consola tiene
+    // que poder mostrarle a una persona QUÉ SE SABE DE ELLA, en castellano, y la única frase
+    // que dice eso bien es la que escribió quien declaró el campo. Copiarlas al front habría
+    // dejado noventa y cinco rótulos que se separan del código en la primera semana.
+    'gruposDeSenales': [
+      for (final g in gruposDeSenales)
+        {'prefijo': g.prefijo, 'titulo': g.titulo, 'queRevela': g.queRevela},
+    ],
+    'campos': {
+      for (final entrada in {
+        'senales': camposDeSenales,
+        'autenticidad': camposDeAutenticidad,
+      }.entries)
+        entrada.key: [
+          for (final c in entrada.value)
+            {
+              'nombre': c.nombre,
+              'queManda': c.queManda,
+              'como': c.como.name,
+              if (c.como == Transformacion.tramo) 'tramoDe': c.tramoDe,
+              if (grupoDe(c.nombre) != null) 'grupo': grupoDe(c.nombre)!.prefijo,
+            },
+        ],
+    },
     'nuncaSePiden': [
       for (final e in permisosProhibidos.entries)
         {'nombre': e.key, 'porQue': e.value},

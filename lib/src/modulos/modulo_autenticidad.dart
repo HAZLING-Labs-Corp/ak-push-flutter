@@ -31,27 +31,12 @@ import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
 
+import '../permisologia/campos.dart';
 import '../permisologia/transformar.dart';
 import 'modulo.dart';
 
-/// Los campos que este módulo manda, y qué manda cada uno.
-///
-/// 🔴 Todos son `taICual` y eso está bien: ninguno viene de algo que haya escrito una
-/// persona. Son propiedades del aparato y booleanos calculados. Ver `transformar.dart` — la
-/// regla es que un campo que PUEDA llevar texto de alguien no use `taICual`, y acá ninguno
-/// puede.
-const List<CampoRecolectado> camposDeAutenticidad = [
-  CampoRecolectado('esFisico', Transformacion.taICual,
-      queManda: 'si el sistema dice que es un teléfono de verdad y no un emulador'),
-  CampoRecolectado('pareceEmulador', Transformacion.taICual,
-      queManda: 'si las propiedades del aparato coinciden con las de un emulador conocido'),
-  CampoRecolectado('senalesDeEmulador', Transformacion.taICual,
-      queManda: 'cuántas señales de emulador se encontraron, de las que se miran'),
-  CampoRecolectado('senalesDeRoot', Transformacion.taICual,
-      queManda: 'cuántas señales de root se encontraron. Cero no quiere decir limpio'),
-  CampoRecolectado('compilacionDePrueba', Transformacion.taICual,
-      queManda: 'si el sistema operativo está firmado con llaves de prueba y no de fábrica'),
-];
+export '../permisologia/campos.dart' show camposDeAutenticidad;
+
 
 class ModuloDeAutenticidad extends Modulo {
   ModuloDeAutenticidad();
