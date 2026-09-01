@@ -20,6 +20,7 @@ class LoRecolectado extends StatefulWidget {
 
 class _LoRecolectadoState extends State<LoRecolectado> {
   Map<String, dynamic>? _delAparato;
+  Map<String, Object?> _senales = const {};
   Diagnostico? _diag;
 
   @override
@@ -31,7 +32,11 @@ class _LoRecolectadoState extends State<LoRecolectado> {
   Future<void> _leer() async {
     final d = await DatosDelDispositivo.recolectar();
     final g = await AkPush.diagnostico();
-    if (mounted) setState(() { _delAparato = d.toJson(); _diag = g; });
+    // Las ~95 señales de nivel 0. Es lo mismo que se le manda al servidor, ya transformado:
+    // acá se muestra CRUDO lo que sale, para que la persona vea exactamente qué se recolecta.
+    Map<String, Object?> sen = const {};
+    try { sen = await ModuloDeSenales().medir(); } catch (_) {/* sólo Android */}
+    if (mounted) setState(() { _delAparato = d.toJson(); _senales = sen; _diag = g; });
   }
 
   /// Los seis campos que el SDK manda duplicados en inglés y castellano. Se muestran una
@@ -98,6 +103,8 @@ class _LoRecolectadoState extends State<LoRecolectado> {
           ]),
         ),
         const SizedBox(height: 24),
+        _Senales(medido: _senales),
+        const SizedBox(height: 24),
         Text('De la sesión', style: t.textTheme.titleMedium),
         const SizedBox(height: 8),
         Card(
@@ -140,6 +147,21 @@ class _DondeEstuvoState extends State<DondeEstuvo> {
     _mirar();
   }
 
+  /// Arma el mapa alrededor de un punto. Extraído para poder pintarlo con la última
+  /// posición conocida al instante y volver a pintarlo con la fresca cuando llegue.
+  void _pintar(Position p) {
+    final c = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..loadRequest(Uri.parse(
+        // Un recuadro alrededor del punto: al zoom fijo, una posición aproximada se ve como
+        // si fuera exacta, y eso es afirmar de más.
+        'https://www.openstreetmap.org/export/embed.html'
+        '?bbox=${p.longitude - 0.02},${p.latitude - 0.02},'
+        '${p.longitude + 0.02},${p.latitude + 0.02}'
+        '&layer=mapnik&marker=${p.latitude},${p.longitude}'));
+    if (mounted) setState(() { _pos = p; _mapa = c; _buscando = false; });
+  }
+
   Future<void> _mirar() async {
     setState(() { _buscando = true; _motivo = null; });
     try {
@@ -151,30 +173,28 @@ class _DondeEstuvoState extends State<DondeEstuvo> {
         setState(() { _motivo = 'el teléfono tiene la ubicación apagada'; _buscando = false; });
         return;
       }
-      // La misma escalera que usa el SDK: primero lo barato, después lo que engancha.
-      Position? p;
-      for (final a in [LocationAccuracy.low, LocationAccuracy.medium]) {
-        try {
-          p = await Geolocator.getCurrentPosition(
-            locationSettings: LocationSettings(accuracy: a, timeLimit: const Duration(seconds: 12)));
-          break;
-        } catch (_) {/* se prueba la siguiente */}
-      }
-      p ??= await Geolocator.getLastKnownPosition();
+      // 🔴 LA ÚLTIMA POSICIÓN CONOCIDA PRIMERO. Es instantánea —el sistema ya la tiene—
+      // y alcanza para dibujar la zona en el acto. Antes se esperaba un fix nuevo con dos
+      // timeouts de 12 segundos encadenados, y en un teléfono adentro de un edificio eso son
+      // 24 segundos de spinner con el mapa sin abrir nunca. Medido en el teléfono de Juan el
+      // 2026-09-01: el permiso estaba dado y la ubicación prendida, y el mapa igual no salía.
+      final ultima = await Geolocator.getLastKnownPosition();
+      if (ultima != null) _pintar(ultima);
+
+      // Y recién ahí, una lectura fresca con UN solo intento corto. Si no llega a tiempo, se
+      // queda la última conocida, que para «tu zona» es más que suficiente.
+      Position? p = ultima;
+      try {
+        p = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.medium, timeLimit: Duration(seconds: 8)));
+      } catch (_) {/* se queda la última conocida */}
+
       if (p == null) {
         setState(() { _motivo = 'el sistema no devolvió ninguna posición'; _buscando = false; });
         return;
       }
-      final c = WebViewController()
-        ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..loadRequest(Uri.parse(
-          // Un recuadro alrededor del punto: al zoom fijo, una posición aproximada se ve
-          // como si fuera exacta, y eso es afirmar de más.
-          'https://www.openstreetmap.org/export/embed.html'
-          '?bbox=${p.longitude - 0.02},${p.latitude - 0.02},'
-          '${p.longitude + 0.02},${p.latitude + 0.02}'
-          '&layer=mapnik&marker=${p.latitude},${p.longitude}'));
-      if (mounted) setState(() { _pos = p; _mapa = c; _buscando = false; });
+      _pintar(p);
     } catch (e) {
       if (mounted) setState(() { _motivo = 'falló: $e'; _buscando = false; });
     }
@@ -201,7 +221,11 @@ class _DondeEstuvoState extends State<DondeEstuvo> {
             const SizedBox(height: 18),
             FilledButton.icon(
               onPressed: () async {
-                if (_motivo == 'sin permiso') await AkPush.ofrecerUbicacion(context);
+                // 🔴 Directo al permiso del sistema, SIN volver a mostrar el modal blando.
+                // Ese modal ya salió al iniciar sesión; repetirlo acá es el «pide como cinco
+                // permisos» que se sintió confuso. El botón que la persona ya tocó ES la
+                // intención — no hace falta preguntarle otra vez si quiere.
+                if (_motivo == 'sin permiso') await AkPush.pedirPermiso();
                 await _mirar();
               },
               icon: const Icon(Icons.refresh),
@@ -254,6 +278,73 @@ class _DondeEstuvoState extends State<DondeEstuvo> {
           ]),
         ]),
       ),
+    ]);
+  }
+}
+
+
+/// LAS 95 SEÑALES, AGRUPADAS, CON PARA QUÉ SIRVE CADA UNA.
+///
+/// 🔴 Es la misma información que ve el comercio en la consola, con las mismas frases —salen
+/// de las fichas del SDK, no se escriben acá—. Que la persona pueda leer, en la propia app,
+/// qué se recolecta de ella y PARA QUÉ, es lo que hace defendible pedirlo. Lo pidió Juan el
+/// 2026-09-01: no alcanza con listar los datos, hay que decir para qué sirven.
+class _Senales extends StatelessWidget {
+  const _Senales({required this.medido});
+  final Map<String, Object?> medido;
+
+  String _valor(Object? v) {
+    if (v == null) return '—';
+    if (v is bool) return v ? 'Sí' : 'No';
+    return '$v';
+  }
+
+  static final _ficha = {for (final c in camposDeSenales) c.nombre: c};
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final claves = medido.keys.toList();
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Señales del teléfono', style: t.textTheme.titleMedium),
+      Padding(
+        padding: const EdgeInsets.only(top: 4, bottom: 12),
+        child: Text(
+          claves.isEmpty
+              ? 'Se leen sin pedirte ningún permiso. En este teléfono todavía no se midieron.'
+              : 'Se leen sin pedirte ningún permiso: son ${claves.length} señales y ninguna dice '
+                'quién sos. Dicen cómo está armado y configurado el aparato — y para qué sirve cada una.',
+          style: t.textTheme.bodySmall?.copyWith(color: t.colorScheme.onSurfaceVariant),
+        ),
+      ),
+      for (final g in gruposDeSenales)
+        if (claves.any((k) => k.startsWith(g.prefijo)))
+          Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: ExpansionTile(
+              initiallyExpanded: g == gruposDeSenales.first,
+              title: Text(g.titulo, style: t.textTheme.titleSmall),
+              subtitle: Text(g.queRevela, style: t.textTheme.bodySmall),
+              childrenPadding: const EdgeInsets.only(bottom: 8),
+              children: [
+                for (final k in claves.where((k) => k.startsWith(g.prefijo)))
+                  ListTile(
+                    dense: true,
+                    title: Text(_ficha[k]?.queManda ?? k, style: t.textTheme.bodyMedium),
+                    // 🔴 PARA QUÉ SIRVE, bajo el qué manda. Es lo que Juan pidió ver en la app.
+                    subtitle: _ficha[k]?.paraQue == null
+                        ? null
+                        : Text(_ficha[k]!.paraQue!,
+                            style: t.textTheme.bodySmall
+                                ?.copyWith(color: t.colorScheme.onSurfaceVariant)),
+                    trailing: Text(_valor(medido[k]),
+                        style: t.textTheme.bodyMedium
+                            ?.copyWith(color: t.colorScheme.onSurfaceVariant)),
+                  ),
+              ],
+            ),
+          ),
     ]);
   }
 }

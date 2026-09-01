@@ -91,6 +91,7 @@ void main() {
             {
               'nombre': c.nombre,
               'queManda': c.queManda,
+              if (c.paraQue != null) 'paraQue': c.paraQue,
               'como': c.como.name,
               if (c.como == Transformacion.tramo) 'tramoDe': c.tramoDe,
               if (grupoDe(c.nombre) != null) 'grupo': grupoDe(c.nombre)!.prefijo,

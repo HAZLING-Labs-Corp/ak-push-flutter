@@ -115,6 +115,11 @@ class CampoRecolectado {
   /// entiende, incluidos nosotros.
   final String queManda;
 
+  /// 🔴 PARA QUÉ SIRVE — en una frase, qué aporta este dato y por qué se recolecta. Lo pidió
+  /// Juan el 2026-09-01: no alcanza con decir QUÉ se manda; hay que poder decirle a la persona
+  /// y al comercio para qué. Se muestra junto al «qué manda», en la consola y en la app.
+  final String? paraQue;
+
   /// Para `tramo`: de cuánto es cada escalón.
   final int tramoDe;
 
@@ -122,6 +127,7 @@ class CampoRecolectado {
     this.nombre,
     this.como, {
     required this.queManda,
+    this.paraQue,
     this.tramoDe = 10,
   });
 

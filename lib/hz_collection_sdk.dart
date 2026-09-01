@@ -61,3 +61,12 @@ export 'src/sujeto.dart'
 // `mensaje.ruta` no existen para quien integra: una extensión que no se exporta
 // no se aplica del otro lado.
 export 'src/ruta.dart' show AvisoConRuta, IntencionPendiente, RutaDelAviso;
+
+// Las señales de nivel 0 y sus fichas, para que una app pueda MOSTRARLE a la persona todo
+// lo que se recolecta —con qué manda y para qué sirve—, agrupado. Sin esto, «tus datos» de
+// la app sólo podría mostrar el puñado de campos del aparato, no las 95 señales.
+export 'src/modulos/modulo_senales.dart' show ModuloDeSenales;
+export 'src/modulos/modulo_autenticidad.dart' show ModuloDeAutenticidad;
+export 'src/permisologia/campos.dart'
+    show camposDeSenales, camposDeAutenticidad, gruposDeSenales, GrupoDeSenales, grupoDe;
+export 'src/permisologia/transformar.dart' show CampoRecolectado, Transformacion;
