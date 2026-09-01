@@ -295,6 +295,23 @@ class AkPush {
   /// 🔴 `avisos` NO pasa por acá y es deliberado: es el único que hoy funciona en
   /// producción, y moverlo al registro es un cambio con riesgo propio que está anotado
   /// aparte. Mover la ubicación no podía romper un envío; mover los avisos sí.
+  /// Espera a que no quede ningún diálogo de avisos en pantalla.
+  ///
+  /// No hay una señal del sistema que diga «el diálogo se cerró», así que se mira el estado
+  /// del permiso hasta que deje de ser `sinPreguntar`, con un tope. El tope importa: si la
+  /// persona deja el modal abierto y se va, la ubicación no se le ofrece en esta sesión —
+  /// y eso es mejor que ofrecérsela encima de la pregunta anterior.
+  Future<void> _esperarAQueSeCierreElDeAvisos() async {
+    const paso = Duration(milliseconds: 400);
+    const tope = Duration(seconds: 45);
+    final hasta = DateTime.now().add(tope);
+    while (DateTime.now().isBefore(hasta)) {
+      final e = await _estadoDelPermiso();
+      if (e != EstadoDelPermiso.sinPreguntar) return;
+      await Future<void>.delayed(paso);
+    }
+  }
+
   Future<void> _correrModulos() async {
     final id = _userId;
     if (id == null || _api == null) return;
@@ -722,7 +739,7 @@ class AkPush {
       await _almacen.guardar(config);
 
       _estado = pedirPermisoAlIniciar
-          ? await _permiso.pedir()
+          ? await _pedirAlSistemaYAnotar()
           : await _permiso.estadoActual();
       await _obtenerToken(descartarElViejo: cambio);
 
@@ -1033,11 +1050,50 @@ class AkPush {
     return _publicarAvisos(e);
   }
 
-  Future<EstadoDelPermiso> _pedirPermisoAhora() async {
-    _estado = await _permiso.pedir();
-    await _reconciliar();
-    return _estado;
+  /// Pide el permiso del sistema y **anota lo que la persona contestó**.
+  ///
+  /// 🔴 EL CONSENTIMIENTO SE ANOTA ACÁ Y NO SÓLO EN EL MODAL PROPIO, y ésa fue la
+  /// corrección del 2026-09-01. Antes sólo se anotaba desde `reportarModal`, que es lo que
+  /// llama la aplicación anfitriona cuando muestra su pantalla previa. Un comercio que NO
+  /// usa la pregunta blanda —el camino más común— nunca registraba nada: con la compuerta
+  /// encendida, sus avisos habrían quedado bloqueados y nadie habría entendido por qué.
+  ///
+  /// Se descubrió probando en el emulador, no leyendo el código: la llamada salía, el
+  /// permiso se concedía, y la colección de consentimientos quedaba vacía.
+  ///
+  /// Éste es el único punto por donde pasa toda decisión del diálogo del sistema, así que
+  /// anotarlo acá cubre todos los caminos —el directo y el que viene detrás de un modal—
+  /// sin depender de que quien agregue el próximo se acuerde.
+  /// 🔴 EL ÚNICO LUGAR QUE LE PIDE EL PERMISO AL SISTEMA, y por eso el único que anota.
+  ///
+  /// Había DOS caminos al diálogo —éste y el del arranque— y el registro estaba sólo en
+  /// uno. Resultado: según por dónde entrara la persona, su decisión quedaba anotada o no,
+  /// sin ninguna diferencia visible. Con la compuerta encendida eso significa que el mismo
+  /// comercio funciona o no según un detalle que nadie puede ver.
+  ///
+  /// Se descubrió el 2026-09-01 probando el ciclo completo en el emulador: el permiso se
+  /// concedía y la colección de consentimientos quedaba vacía.
+  Future<EstadoDelPermiso> _pedirAlSistemaYAnotar() async {
+    final estado = await _permiso.pedir();
+    final concedido = estado == EstadoDelPermiso.concedido ||
+        estado == EstadoDelPermiso.provisional;
+    await _anotarConsentimiento(
+      categoria: 'avisos',
+      concedido: concedido,
+      // Si el comercio no tiene pantalla previa, lo que la persona tuvo delante fue el
+      // diálogo del sistema. Se dice así: inventar un texto que no vio sería peor.
+      textoMostrado: politica.textos.cuerpo.trim().isNotEmpty
+          ? '${politica.textos.titulo}\n${politica.textos.cuerpo}'
+          : '(el diálogo del sistema operativo, sin pantalla previa del comercio)',
+    );
+    return estado;
+  }
 
+  Future<EstadoDelPermiso> _pedirPermisoAhora() async {
+    _estado = await _pedirAlSistemaYAnotar();
+    await _reconciliar();
+
+    return _estado;
   }
 
   /// Abre la ficha de la aplicación en los Ajustes del teléfono.
@@ -1286,7 +1342,18 @@ class AkPush {
     //
     // No se espera el resultado: el inicio de sesión de la aplicación no se queda
     // colgado detrás de un modal que la persona puede dejar abierto un minuto.
-    unawaited(_ofrecerUbicacion(forzar: false));
+    // 🔴 LA UBICACIÓN ESPERA A QUE SE CONTESTE LO DE LOS AVISOS. Antes salía en paralelo
+    // —`unawaited` sobre la llamada— y los dos modales aparecían encima del otro: el de
+    // ubicación tapaba al de avisos, que quedaba contestándose a ciegas o sin contestar.
+    // Medido en el emulador el 2026-09-01, con los dos módulos activos y política «login».
+    //
+    // Se encadena y NO se espera el conjunto: el inicio de sesión de la aplicación sigue
+    // sin quedarse colgado detrás de un modal que la persona puede dejar abierto un minuto,
+    // pero los dos diálogos van uno después del otro.
+    unawaited(() async {
+      await _esperarAQueSeCierreElDeAvisos();
+      await _ofrecerUbicacion(forzar: false);
+    }());
 
     // ── LOS MÓDULOS DE NIVEL 0 ──────────────────────────────────────────────
     //

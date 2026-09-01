@@ -81,7 +81,8 @@ class ModuloDeAutenticidad extends Modulo {
       await c.api.reportarSenales(
         sujetoId: id,
         instalacionId: c.instalacionId,
-        senales: {'autenticidad': medido},
+        modulo: nombre,
+        senales: medido,
       );
       _ultimaVez = DateTime.now();
       _ultimoMotivo = null;

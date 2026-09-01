@@ -336,6 +336,10 @@ class AkPushApi {
     required String sujetoId,
     required String instalacionId,
     required Map<String, dynamic> senales,
+    /// 🔴 A qué módulo pertenece la medición. Sin esto, el servicio guardaba TODO en el
+    /// mismo lugar y el segundo módulo que midiera pisaba al primero, sin ningún error.
+    /// Por omisión `aparato`, que es donde caía antes: así el APK viejo no cambia.
+    String modulo = 'aparato',
   }) async {
     await _pedir(() => _cliente.post(
           Uri.parse('$baseUrl/api/v1/senales'),
@@ -343,6 +347,7 @@ class AkPushApi {
           body: jsonEncode({
             'sujetoId': sujetoId,
             'instalacionId': instalacionId,
+            'modulo': modulo,
             'senales': senales,
           }),
         ));
