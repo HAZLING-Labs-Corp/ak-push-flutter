@@ -8,8 +8,10 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hz_collection_sdk/src/permisologia/catalogo_de_permisos.dart';
+import 'package:hz_collection_sdk/src/permisologia/rubros.dart';
 
 void main() {
+  puertaDeDatoSensible();
   group('el catálogo está bien formado', () {
     test('ningún permiso está declarado dos veces', () {
       final nombres = catalogoDePermisos.map((p) => p.nombre).toList();
@@ -134,6 +136,44 @@ void main() {
 
     test('permisosDeclarados coincide con el catálogo', () {
       expect(permisosDeclarados.length, catalogoDePermisos.length);
+    });
+  });
+}
+
+/// Pruebas de la puerta cerrada. Están aparte a propósito: no comprueban el catálogo,
+/// comprueban una DECISIÓN — y una decisión que sólo vive en una constante se cambia sin
+/// que nadie lo note. Con esto, abrirla hace fallar una prueba con nombre propio, que es
+/// la forma de que el cambio se discuta en vez de colarse.
+void puertaDeDatoSensible() {
+  group('la puerta de datos sensibles', () {
+    test('está cerrada', () {
+      expect(sistemaAdmiteDatoSensible, isFalse,
+          reason: 'Alguien abrió la puerta de datos sensibles. Antes de abrirla hacen '
+              'falta consentimiento explícito por categoría, borrado a pedido y '
+              'registro de accesos — nada de eso existe todavía.');
+    });
+
+    test('con la puerta cerrada, lo sensible queda prohibido pase lo que pase', () {
+      expect(conLaPuertaCerrada(Estado.libre, [DatoSensible.biometria]),
+          Estado.prohibido);
+      expect(conLaPuertaCerrada(Estado.condicionado, [DatoSensible.salud]),
+          Estado.prohibido);
+    });
+
+    test('lo que no es sensible pasa sin tocar', () {
+      expect(conLaPuertaCerrada(Estado.libre, const []), Estado.libre);
+      expect(conLaPuertaCerrada(Estado.condicionado, const []), Estado.condicionado);
+    });
+
+    test('sin rubro declarado se resuelve al caso más restrictivo', () {
+      final d = Disponibilidad.condicionadoSalvo(
+        [Rubro.prestamoPersonal],
+        porQue: 'de prueba',
+      );
+      expect(d.para(Rubro.sinDeclarar), Estado.prohibido,
+          reason: 'No declarar el rubro no puede salir más barato que declararlo.');
+      expect(d.para(Rubro.seguros), Estado.condicionado);
+      expect(d.para(Rubro.prestamoPersonal), Estado.prohibido);
     });
   });
 }
