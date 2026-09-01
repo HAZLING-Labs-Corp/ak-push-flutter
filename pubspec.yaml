@@ -61,3 +61,9 @@ flutter:
       android:
         package: com.hazling.collection
         pluginClass: SenalesPlugin
+      # 🔴 iOS SE DECLARA ACÁ O EL CANAL NO EXISTE. Hasta el 2026-09-01 sólo estaba
+      # `android`, así que en iPhone nadie contestaba `hz_collection_sdk/senales` y el
+      # módulo devolvía vacío: cero de 95 campos. En iOS se alcanzan ~33 —el resto no
+      # existe en la plataforma, ver la cabecera de SenalesPlugin.swift.
+      ios:
+        pluginClass: SenalesPlugin

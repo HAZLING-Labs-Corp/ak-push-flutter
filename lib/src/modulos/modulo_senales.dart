@@ -115,12 +115,21 @@ class ModuloDeSenales extends Modulo {
 
   /// Mide. Público para poder probarlo sin montar toda la fachada.
   ///
-  /// 🔴 Sólo Android por ahora, y se dice en vez de devolver ceros: en iOS ni la
-  /// configuración del sistema ni los servicios de accesibilidad tienen una API pública
-  /// equivalente. Devolver un mapa vacío es honesto; devolverlo lleno de ceros haría que un
-  /// puntaje tratara a todos los iPhone como si fueran el mismo teléfono raro.
+  /// 🔴 ANDROID MIDE ~95 CAMPOS, iOS MIDE ~33, Y ESA DIFERENCIA NO SE DISIMULA.
+  ///
+  /// Hasta el 2026-09-01 esto devolvía un mapa vacío en iOS, porque el paquete declaraba
+  /// sólo la plataforma `android` y nadie contestaba el canal. Ahora hay lado nativo de iOS
+  /// —ver `ios/Classes/SenalesPlugin.swift`— y mide lo que la plataforma permite.
+  ///
+  /// Lo que NO se alcanza en iOS no se rellena con ceros: no viaja. En iOS no existen la
+  /// configuración del sistema (`cfg_`), la enumeración de servicios de accesibilidad
+  /// (`acc_`) ni el multiusuario (`usr_`). Devolver ceros haría que un puntaje tratara a
+  /// todos los iPhone como el mismo teléfono raro — y peor: haría creer que la señal de
+  /// control remoto se midió y salió negativa, cuando no se pudo medir.
+  ///
+  /// Quien consuma esto tiene que mirar CUÁNTOS campos llegaron antes de interpretarlos.
   Future<Map<String, Object?>> medir() async {
-    if (!Platform.isAndroid) return const {};
+    if (!Platform.isAndroid && !Platform.isIOS) return const {};
     final crudo = await _canal.invokeMapMethod<String, Object?>('medir');
     if (crudo == null || crudo.isEmpty) return const {};
 
