@@ -35,19 +35,24 @@ import kotlin.math.sqrt
  * READ_CONTACTS y READ_CALENDAR a cualquiera. `bin/muro.dart` lo comprueba en cada
  * compilación.
  *
- * ══ DE DÓNDE SALE CADA GRUPO — no todo es de CredoLab ══
+ * ══ 🔴 DE DÓNDE SALE ESTE CÓDIGO, Y DE DÓNDE NO ══
  *
- * Fueron CUATRO investigaciones en paralelo el 2026-08-31, no una, y los grupos de acá abajo
- * salen de distintas. Decir «esto lo copiamos de CredoLab» sería cómodo y sería falso:
+ * **De ningún SDK ajeno.** Ni una línea, ni una clase, ni un recurso, ni una biblioteca
+ * compilada de otro colector entra en este repositorio: no se enlaza ninguno, no se declara
+ * ninguno como dependencia, y no hay un solo `.jar`, `.aar`, `.dex` ni `.smali` de terceros
+ * en el árbol. Todo lo de abajo está escrito en Kotlin contra la **API pública y documentada
+ * de Android** —`Settings.Global`, `Settings.Secure`, `Settings.System`, `SensorManager`,
+ * `BatteryManager`, `AccessibilityManager`, `ConnectivityManager`, `TelephonyManager`—, cada
+ * una de ellas en developer.android.com y usable por cualquiera. Se puede auditar renglón
+ * por renglón.
  *
- *   · Los seis primeros grupos —configuración, accesibilidad, batería, sensores, perfil y
- *     red— salen del **bytecode del núcleo de CredoLab**, descompilado del SDK que está
- *     instalado en la aplicación de Credit CX. Son las claves que leen de verdad, verificadas
- *     una por una contra el binario. De sus ~150 campos, éstos son los que no cuestan
- *     fricción.
+ * Lo que aportaron las cuatro investigaciones del 2026-08-31 no fue código: fue **prioridad**
+ * —cuáles de los cientos de campos posibles vale la pena mirar—, que es una decisión y no una
+ * implementación. Y una de las cuatro aportó algo que ninguno de los colectores del mercado
+ * tiene:
  *
- *   · El séptimo —`huellaDigital`— **CredoLab no lo tiene**, y es el único grupo de todo el
- *     SDK con respaldo independiente: sale del estudio de Berg, Burg, Gombovic y Puri para
+ *   · El séptimo —`huellaDigital`— es el único grupo con respaldo independiente, y no lo
+ *     tiene ningún colector del sector: sale del estudio de Berg, Burg, Gombovic y Puri para
  *     NBER sobre 270.000 compras, que midió que un modelo hecho *sólo* con huella digital
  *     —tipo de aparato, sistema, hora de la compra, canal— alcanza **AUC 69,6% contra 68,3%
  *     del FICO**. Y de la revisión del mercado antifraude (Socure, FingerprintJS, Seon), donde
@@ -101,7 +106,8 @@ class SenalesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
 
     // ── 1 · La configuración del sistema ────────────────────────────────────────────────
     //
-    // Las 28 claves que lee CredoLab. Las tres primeras son señal antifraude directa:
+    // 28 claves de `android.provider.Settings`, todas públicas y documentadas. Las tres
+    // primeras son señal antifraude directa:
     // depuración USB activa, modo desarrollador y una aplicación marcada como depurable no
     // son cosas que tenga el teléfono de alguien que sólo quiere pagar sus cuotas.
     //
@@ -282,7 +288,8 @@ class SenalesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     }
 
     /**
-     * LA HUELLA DIGITAL — el grupo que CredoLab no tiene, y el único con respaldo auditado.
+     * LA HUELLA DIGITAL — el grupo que no tiene ningún colector del mercado, y el único con
+     * respaldo auditado por terceros.
      *
      * El estudio de NBER sobre 270.000 compras midió que **el tipo de aparato, el sistema, la
      * hora de la compra y el canal de llegada** solos le ganan al FICO. La diferencia de

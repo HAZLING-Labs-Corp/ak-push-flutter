@@ -72,6 +72,7 @@ void main(List<String> args) {
   stdout.writeln('$_gris  rubro: ${_rubro.name}'
       '${_rubro == Rubro.sinDeclarar ? "  ← sin declarar: se aplica el criterio más estricto" : ""}$_fin\n');
 
+  _revisarQueNoHayaCodigoAjeno(raiz);
   _revisarAndroid(raiz);
   _revisarIos(raiz);
 
@@ -83,6 +84,84 @@ void main(List<String> args) {
   stdout.writeln(
       '$_rojo$_negrita  ✗ $_fallas problema(s). No publiques hasta resolverlos.$_fin\n');
   exit(1);
+}
+
+/// 🔴 NINGÚN SDK DE RECOLECCIÓN AJENO ENTRA ACÁ. Ni compilado, ni enlazado, ni copiado.
+///
+/// La regla la puso Juan el 2026-09-01, y es de las que hay que hacer cumplir con código
+/// porque el día que se rompa nadie se va a dar cuenta leyendo un diff: alguien agrega una
+/// dependencia para «probar algo» y queda. Nos inspiramos en lo que hace el mercado —qué
+/// campos vale la pena mirar es una decisión, y las decisiones no se patentan— pero la
+/// implementación es nuestra, escrita contra la API pública de Android, y tiene que poder
+/// auditarse renglón por renglón. Una biblioteca compilada de un tercero no se puede auditar
+/// y arrastra su licencia adentro.
+///
+/// Se busca lo único que se puede buscar sin adivinar: **archivos compilados de terceros en
+/// el árbol** y **dependencias declaradas con nombre de colector conocido**. No prueba
+/// ausencia —nada lo hace—, pero atrapa el caso real, que es el descuido.
+void _revisarQueNoHayaCodigoAjeno(String raiz) {
+  stdout.writeln('$_negrita  Código ajeno$_fin');
+
+  // El wrapper de Gradle es de Gradle y lo pone Flutter al crear el proyecto; los productos
+  // de compilación son nuestros, recién horneados. Ninguno de los dos es una biblioteca de
+  // terceros arrastrada a mano, que es lo que se busca.
+  bool exento(String ruta) =>
+      ruta.contains('/build/') ||
+      ruta.contains('/.dart_tool/') ||
+      ruta.contains('gradle/wrapper/gradle-wrapper.jar') ||
+      ruta.contains('/Pods/');
+
+  final compilados = <String>[];
+  final dir = Directory(raiz);
+  if (dir.existsSync()) {
+    for (final f in dir.listSync(recursive: true, followLinks: false)) {
+      if (f is! File) continue;
+      final r = f.path;
+      if (exento(r)) continue;
+      if (r.endsWith('.jar') ||
+          r.endsWith('.aar') ||
+          r.endsWith('.dex') ||
+          r.endsWith('.smali') ||
+          r.endsWith('.xcframework')) {
+        compilados.add(r.replaceFirst(raiz, '.'));
+      }
+    }
+  }
+
+  // Los nombres de los colectores del mercado, para el caso en que alguien declare uno como
+  // dependencia. La lista es corta a propósito: es una red de seguridad para el descuido, no
+  // un censo del sector.
+  const ajenos = [
+    'credolab', 'credo_lab', 'lenddo', 'juicescore', 'trustingsocial',
+    'threatmetrix', 'seon', 'sift', 'socure', 'biocatch', 'fingerprintjs',
+  ];
+  final declaradas = <String>[];
+  final pub = File('$raiz/pubspec.yaml');
+  if (pub.existsSync()) {
+    for (final linea in pub.readAsLinesSync()) {
+      final l = linea.trim().toLowerCase();
+      if (l.startsWith('#')) continue;
+      for (final a in ajenos) {
+        if (l.contains(a)) declaradas.add(linea.trim());
+      }
+    }
+  }
+
+  if (compilados.isEmpty && declaradas.isEmpty) {
+    stdout.writeln('$_verde    ✓ Nada compilado de terceros y ninguna dependencia de otro '
+        'colector$_fin');
+    return;
+  }
+
+  _fallas += compilados.length + declaradas.length;
+  for (final c in compilados) {
+    stdout.writeln('$_rojo$_negrita    ✗ Archivo compilado de terceros: $c$_fin');
+  }
+  for (final d in declaradas) {
+    stdout.writeln('$_rojo$_negrita    ✗ Dependencia de otro colector declarada: $d$_fin');
+  }
+  stdout.writeln('$_gris      Nos inspiramos en lo que hace el mercado; no usamos su código.$_fin');
+  stdout.writeln('$_gris      La implementación se escribe contra la API pública de Android.$_fin');
 }
 
 /// 🔴 EL MANIFIESTO DE ESTE PAQUETE — la comprobación que no necesita compilar nada.

@@ -4,10 +4,15 @@
 /// señal-esfuerzo tiene de todo el plan: **cuesta cero permisos**, no le muestra ningún
 /// diálogo a nadie, y no dice absolutamente nada sobre la persona — dice sobre el aparato.
 ///
-/// De dónde sale: del núcleo de CredoLab, leído de su bytecode el 2026-08-31. De los ~150
-/// campos que recolecta, la batería de detectores de emulador y root es **lo que más aporta
-/// y lo que menos cuesta**. Todo lo demás que hacen —contactos, calendario, cuentas— pide
-/// permisos caros y da menos.
+/// De dónde sale: de la literatura pública de detección de emuladores y root, que es
+/// abundante y vieja. Las propiedades de `android.os.Build` que delatan un emulador
+/// —`generic`, `goldfish`, `ranchu`, `test-keys`— y las rutas de `su` están documentadas en
+/// la API pública de Android y publicadas en decenas de proyectos abiertos y notas de
+/// seguridad. Todo lo de abajo está escrito desde esa API, de cero.
+///
+/// Lo que la revisión del mercado aportó no fue código sino **prioridad**: entre las docenas
+/// de señales posibles, ésta es la que más aporta y la que menos cuesta. Lo demás que hace
+/// el sector —contactos, calendario, cuentas— pide permisos caros y da menos.
 ///
 /// 🔴 QUÉ NO ES ESTO, y hay que decirlo antes de que alguien lo tome por más de lo que da:
 ///

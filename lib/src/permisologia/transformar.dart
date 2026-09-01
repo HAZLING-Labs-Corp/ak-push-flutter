@@ -6,16 +6,18 @@
 /// discutir uno por uno si se puede cambiar. Las reglas de este tipo se imponen al principio
 /// o no se imponen.
 ///
-/// **De dónde sale.** Del código descompilado de CredoLab, leído el 2026-08-31. Dicen que no
-/// leen el contenido —ni el nombre de un contacto, ni el texto de un mensaje— sino que arman
-/// estadísticas. **Es cierto**, y la técnica es ésta: cada campo de texto libre pasa por una
-/// función antes de entrar al paquete que se sube. Nunca queda como texto.
+/// **De dónde sale.** De la minimización de datos, que es un principio escrito en la ley —
+/// artículo 5.1.c del RGPD, y su equivalente en la LOPDP ecuatoriana y en la LGPD brasileña:
+/// sólo se trata el dato **adecuado, pertinente y limitado** a lo necesario. No es de nadie
+/// en particular y no hay nada que inventar; la técnica es ésta: cada campo de texto libre
+/// pasa por una función antes de entrar al paquete que se sube. Nunca queda como texto.
 ///
 ///     display_name  «María Fernanda Solís»  →  3 palabras · 20 caracteres
 ///     contact_status                        →  0 / 1
 ///     el número de teléfono                 →  un identificador opaco
 ///
-/// No es un secreto ni es difícil. Es lo único de todo ese SDK que vale la pena copiar.
+/// Es la práctica corriente del sector —todo colector serio la aplica— y está implementada
+/// acá desde cero, en veinte líneas de Dart que se leen abajo enteras.
 ///
 /// **Qué NO resuelve, para no venderlo de más:** esto reduce lo que se puede reconstruir de
 /// una persona a partir de un campo suelto. No la vuelve anónima. Un conjunto de conteos

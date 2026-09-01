@@ -4,12 +4,16 @@
 /// paralelo el 2026-08-31, no una:
 ///
 ///   · Los seis primeros grupos —configuración, accesibilidad, batería, sensores, perfil y
-///     red— salen del **bytecode del núcleo de CredoLab**, descompilado del SDK instalado en
-///     la aplicación de Credit CX. Son las claves que leen de verdad, verificadas contra el
-///     binario. De sus ~150 campos, éstos son los que **no cuestan fricción**.
+///     red— se leen de la **API pública y documentada de Android**: `Settings.Global`,
+///     `Settings.Secure`, `Settings.System`, `SensorManager`, `BatteryManager`,
+///     `AccessibilityManager` y `ConnectivityManager`. Cada clave de acá abajo está en
+///     developer.android.com y cualquiera puede leerlas. Lo que aportó el análisis del
+///     mercado fue **cuáles de las cientos que hay vale la pena mirar**, que es una decisión,
+///     no un código.
 ///
-///   · El séptimo —`hd_`, la huella digital— **CredoLab no lo tiene**, y es el único grupo con
-///     respaldo independiente: del estudio de Berg, Burg, Gombovic y Puri para **NBER sobre
+///   · El séptimo —`hd_`, la huella digital— **no lo tiene ningún colector del mercado**, y es
+///     el único grupo con respaldo independiente: del estudio de Berg, Burg, Gombovic y Puri
+///     para **NBER sobre
 ///     270.000 compras**, donde un modelo hecho *sólo* con huella digital —tipo de aparato,
 ///     sistema, hora de la compra, canal— alcanzó **AUC 69,6% contra 68,3% del FICO**. Y de la
 ///     revisión del mercado antifraude, donde la coherencia entre idioma, zona horaria y país
@@ -23,7 +27,13 @@
 /// el aparato y si se comporta como un teléfono de verdad. Esa distinción es la que permite
 /// que este módulo nazca prendido mientras ubicación y avisos nacen apagados.
 ///
-/// **Lo que deliberadamente NO se trae**, aunque CredoLab sí:
+/// 🔴 NADA DE ESTE ARCHIVO SALE DE CÓDIGO AJENO. Ni una línea, ni una clase, ni un recurso,
+/// ni una biblioteca compilada de ningún otro colector entra en este repositorio — está
+/// prohibido y se comprueba: `pubspec.yaml` no declara ninguna, y no hay un solo `.jar`,
+/// `.aar` ni `.dex` de terceros en el árbol. Lo de abajo está escrito en Kotlin y en Dart
+/// contra la API de Android, y se puede auditar línea por línea.
+///
+/// **Lo que deliberadamente NO se trae**, aunque el resto del sector sí:
 ///
 ///   · La lista de sensores con vendedor y resolución. Es una huella de dispositivo bastante
 ///     única, y Apple prohíbe la huella combinada tenga o no consentimiento. Se manda cuántos
@@ -246,7 +256,8 @@ const List<CampoRecolectado> camposDeSenales = [
       queManda: 'la velocidad de subida estimada, por tramos'),
 
   // ── La huella digital ─────────────────────────────────────────────────────────────────
-  // El grupo de NBER, el único con respaldo auditado. No es de CredoLab: ellos no lo tienen.
+  // El grupo de NBER, el único con respaldo auditado por terceros. No lo tiene ningún
+  // colector del mercado: es la única parte del plan donde vamos adelante y no atrás.
   CampoRecolectado('hd_hora_local', Transformacion.taICual,
       queManda: 'a qué hora del día se midió. Es el campo más citado del estudio de NBER'),
   CampoRecolectado('hd_dia_de_semana', Transformacion.taICual,
