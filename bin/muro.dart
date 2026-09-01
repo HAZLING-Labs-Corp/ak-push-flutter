@@ -38,11 +38,39 @@ const _negrita = '\x1B[1m';
 
 int _fallas = 0;
 
+/// 🔴 EL RUBRO DEL COMERCIO CAMBIA EL VEREDICTO, y por eso el muro lo necesita.
+/// `READ_MEDIA_IMAGES` está vetado para una app de préstamo personal y sólo condicionado
+/// para una aseguradora. Sin saber el rubro, el muro tendría que elegir entre mentir en
+/// contra o dejar pasar de más.
+///
+/// Se pasa con `--rubro=seguros`. Si no se pasa, queda `sinDeclarar`, que se resuelve al
+/// caso MÁS restrictivo: no contestar no puede salir más barato que contestar.
+Rubro _rubro = Rubro.sinDeclarar;
+
 void main(List<String> args) {
-  final raiz = args.isNotEmpty ? args.first : Directory.current.path;
+  final sueltos = <String>[];
+  for (final a in args) {
+    if (a.startsWith('--rubro=')) {
+      final v = a.substring(8);
+      _rubro = Rubro.values.firstWhere(
+        (r) => r.name.toLowerCase() == v.toLowerCase(),
+        orElse: () {
+          stdout.writeln('$_rojo  Rubro desconocido: $v$_fin');
+          stdout.writeln(
+              '$_gris  Los que hay: ${Rubro.values.map((r) => r.name).join(", ")}$_fin');
+          exit(2);
+        },
+      );
+    } else {
+      sueltos.add(a);
+    }
+  }
+  final raiz = sueltos.isNotEmpty ? sueltos.first : Directory.current.path;
 
   stdout.writeln('\n$_negrita  EL MURO DE PERMISOS$_fin');
-  stdout.writeln('$_gris  $raiz$_fin\n');
+  stdout.writeln('$_gris  $raiz$_fin');
+  stdout.writeln('$_gris  rubro: ${_rubro.name}'
+      '${_rubro == Rubro.sinDeclarar ? "  ← sin declarar: se aplica el criterio más estricto" : ""}$_fin\n');
 
   _revisarAndroid(raiz);
   _revisarIos(raiz);
@@ -139,14 +167,36 @@ void _revisarLista(Set<String> permisos, String quienLoAporta) {
       continue;
     }
 
+    final corto = p.replaceFirst('android.permission.', '');
     final n = switch (ficha.nivel) {
       Nivel.ninguno => '${_gris}nivel 0$_fin',
       Nivel.comun => '${_gris}nivel 1$_fin',
       Nivel.asusta => '$_amarillo nivel 2 · asusta en la ficha de la tienda$_fin',
-      Nivel.revisionManual => '$_rojo nivel 3 · lo revisa Google a mano$_fin',
+      Nivel.revisionManual => '$_rojo nivel 3 · lo revisa la tienda a mano$_fin',
     };
-    stdout.writeln('$_verde    ✓$_fin ${p.replaceFirst("android.permission.", "")}  $n');
-    stdout.writeln('$_gris      ${ficha.modulo} · ${ficha.paraQue}$_fin');
+
+    // El veredicto sale de `estadoPara`, que encadena el rubro y la puerta de dato
+    // sensible en el orden correcto. Consultarlas por separado acá dejaría abierta la
+    // posibilidad de mirar una y olvidarse de la otra.
+    switch (ficha.estadoPara(_rubro)) {
+      case Estado.prohibido:
+        _fallas++;
+        stdout.writeln('$_rojo    ✗ $corto$_fin');
+        stdout.writeln('$_rojo      PROHIBIDO para el rubro «${_rubro.name}».$_fin');
+        stdout.writeln('$_rojo      ${ficha.porQuePara(_rubro)}$_fin\n');
+      case Estado.condicionado:
+        stdout.writeln('$_amarillo    ⚠$_fin $corto  $n');
+        stdout.writeln('$_gris      ${ficha.modulo} · ${ficha.paraQue}$_fin');
+        stdout.writeln('$_amarillo      Se puede, pero hay que hacer esto:$_fin');
+        for (final r in ficha.requisitos) {
+          stdout.writeln('$_amarillo      · ${r.queHacer}$_fin');
+          stdout.writeln('$_gris        ${r.fuente}$_fin');
+        }
+        stdout.writeln('');
+      case Estado.libre:
+        stdout.writeln('$_verde    ✓$_fin $corto  $n');
+        stdout.writeln('$_gris      ${ficha.modulo} · ${ficha.paraQue}$_fin');
+    }
   }
   stdout.writeln('');
 }
