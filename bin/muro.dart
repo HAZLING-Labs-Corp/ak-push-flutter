@@ -1,0 +1,291 @@
+/// EL MURO DE PERMISOS — la comprobación que falla si algo se coló.
+///
+/// Se corre así, desde la raíz de CUALQUIER aplicación que instale este SDK:
+///
+///     dart run hz_collection_sdk:muro
+///
+/// 🔴 ESTÁ HECHO PARA QUE LO CORRA EL INTEGRADOR, no sólo nosotros. Ése es el punto:
+/// el comercio no tiene por qué creernos que no le ensuciamos la ficha de Play — lo
+/// comprueba en su propia aplicación, con un comando, antes de publicar.
+///
+/// Qué hace, en tres restas:
+///
+///   1. Lee los permisos del manifiesto FUSIONADO (lo que de verdad va a llevar el APK).
+///   2. Le resta los que declara la propia aplicación en su manifiesto fuente.
+///   3. Lo que queda lo aportaron las dependencias, y **cada uno tiene que tener ficha
+///      en el catálogo**. Si aparece uno sin ficha, falla.
+///
+/// Y además:
+///
+///   · Si aparece un permiso de la lista de prohibidos, falla diciendo QUÉ POLÍTICA se
+///     estaría violando y a quién le sacan la app de la tienda.
+///   · Comprueba que toda dependencia con código nativo de iOS traiga su manifiesto de
+///     privacidad de Apple. Sin eso, a la aplicación anfitriona le rebotan la subida.
+///
+/// Devuelve 0 si está limpio y 1 si no, así que sirve tal cual en una tubería de CI.
+library;
+
+import 'dart:io';
+
+import 'package:hz_collection_sdk/src/permisologia/catalogo_de_permisos.dart';
+
+const _rojo = '\x1B[31m';
+const _verde = '\x1B[32m';
+const _amarillo = '\x1B[33m';
+const _gris = '\x1B[90m';
+const _fin = '\x1B[0m';
+const _negrita = '\x1B[1m';
+
+int _fallas = 0;
+
+void main(List<String> args) {
+  final raiz = args.isNotEmpty ? args.first : Directory.current.path;
+
+  stdout.writeln('\n$_negrita  EL MURO DE PERMISOS$_fin');
+  stdout.writeln('$_gris  $raiz$_fin\n');
+
+  _revisarAndroid(raiz);
+  _revisarIos(raiz);
+
+  stdout.writeln('');
+  if (_fallas == 0) {
+    stdout.writeln('$_verde  ✓ Limpio. Nada se coló.$_fin\n');
+    exit(0);
+  }
+  stdout.writeln(
+      '$_rojo$_negrita  ✗ $_fallas problema(s). No publiques hasta resolverlos.$_fin\n');
+  exit(1);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────
+// ANDROID
+// ─────────────────────────────────────────────────────────────────────────────────
+
+void _revisarAndroid(String raiz) {
+  stdout.writeln('$_negrita  Android$_fin');
+
+  final propio = File('$raiz/android/app/src/main/AndroidManifest.xml');
+  if (!propio.existsSync()) {
+    stdout.writeln('$_gris    sin proyecto Android acá — se saltea$_fin');
+    return;
+  }
+
+  final declaraLaApp = _permisosDe(propio.readAsStringSync());
+  final fusionado = _manifiestoFusionado(raiz);
+
+  if (fusionado == null) {
+    // 🔴 No se falla por esto, y es a propósito: el manifiesto fusionado sólo existe
+    // después de compilar. Fallar acá obligaría a compilar para poder correr el muro, y
+    // entonces nadie lo correría. Se revisa lo que hay y se dice qué falta para el resto.
+    stdout.writeln('$_amarillo    ⚠ No hay manifiesto fusionado todavía.$_fin');
+    stdout.writeln(
+        '$_gris      Compilá una vez (flutter build apk --debug) y volvé a correr esto$_fin');
+    stdout.writeln(
+        '$_gris      para revisar también lo que aportan las dependencias.$_fin');
+    _revisarLista(declaraLaApp, 'la aplicación');
+    return;
+  }
+
+  final enElApk = _permisosDe(fusionado);
+
+  // 🔴 SE APARTAN LOS QUE LA PROPIA APP SE AUTOGENERA, y no es una excepción cómoda.
+  // AndroidX crea permisos con el nombre del paquete adentro
+  // —`com.tuapp.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`— para que ninguna otra
+  // aplicación pueda escuchar sus avisos internos. Son de seguridad, no se le muestran
+  // a nadie, y llevan el paquete adentro, así que JAMÁS pueden estar en un catálogo
+  // estático: cambian con cada app. Tratarlos como «sin ficha» haría que el muro diera
+  // rojo en todas las aplicaciones del mundo, y un muro que siempre da rojo se apaga.
+  final paquete = _paqueteDe(fusionado);
+  final propios = paquete == null
+      ? <String>{}
+      : enElApk.where((p) => p.startsWith('$paquete.')).toSet();
+
+  final loAportanDependencias =
+      enElApk.difference(declaraLaApp).difference(propios);
+
+  stdout.writeln(
+      '$_gris    ${enElApk.length} en el APK · ${declaraLaApp.length} los declara la app · '
+      '${loAportanDependencias.length} los aportan las dependencias'
+      '${propios.isEmpty ? "" : " · ${propios.length} se los autogenera la app"}$_fin\n');
+
+  _revisarLista(declaraLaApp, 'la aplicación');
+  _revisarLista(loAportanDependencias, 'una dependencia');
+}
+
+/// Revisa un grupo de permisos contra el catálogo y contra la lista de prohibidos.
+void _revisarLista(Set<String> permisos, String quienLoAporta) {
+  if (permisos.isEmpty) return;
+
+  for (final p in permisos.toList()..sort()) {
+    final prohibido = permisosProhibidos[p];
+    if (prohibido != null) {
+      _fallas++;
+      stdout.writeln('$_rojo    ✗ $p$_fin');
+      stdout.writeln('$_rojo      PROHIBIDO. $prohibido$_fin');
+      stdout.writeln(
+          '$_rojo      Lo aporta: $quienLoAporta. Sacalo antes de publicar.$_fin\n');
+      continue;
+    }
+
+    final ficha = fichaDe(p);
+    if (ficha == null) {
+      _fallas++;
+      stdout.writeln('$_rojo    ✗ $p$_fin');
+      stdout.writeln('$_rojo      Sin ficha en el catálogo. Lo aporta: $quienLoAporta.$_fin');
+      stdout.writeln(
+          '$_gris      Si tiene que estar, declaralo en catalogo_de_permisos.dart con su$_fin');
+      stdout.writeln(
+          '$_gris      módulo, para qué sirve, cuánto se retiene y con qué base legal.$_fin\n');
+      continue;
+    }
+
+    final n = switch (ficha.nivel) {
+      Nivel.ninguno => '${_gris}nivel 0$_fin',
+      Nivel.comun => '${_gris}nivel 1$_fin',
+      Nivel.asusta => '$_amarillo nivel 2 · asusta en la ficha de la tienda$_fin',
+      Nivel.revisionManual => '$_rojo nivel 3 · lo revisa Google a mano$_fin',
+    };
+    stdout.writeln('$_verde    ✓$_fin ${p.replaceFirst("android.permission.", "")}  $n');
+    stdout.writeln('$_gris      ${ficha.modulo} · ${ficha.paraQue}$_fin');
+  }
+  stdout.writeln('');
+}
+
+/// El nombre del paquete de la aplicación, del atributo `package` del manifiesto.
+/// Hace falta para reconocer los permisos que ella misma se autogenera.
+String? _paqueteDe(String xml) =>
+    RegExp(r'\bpackage\s*=\s*"([^"]+)"').firstMatch(xml)?.group(1);
+
+/// Saca los `android:name` de todos los `<uses-permission>` de un manifiesto.
+///
+/// Se hace con una expresión regular y no con un parser de XML a propósito: el
+/// manifiesto fusionado trae comentarios, atributos de herramientas y espacios de
+/// nombres que a un parser estricto lo hacen fallar, y acá sólo hacen falta los nombres.
+Set<String> _permisosDe(String xml) => RegExp(
+      r'<uses-permission[^>]*android:name\s*=\s*"([^"]+)"',
+      multiLine: true,
+    ).allMatches(xml).map((m) => m.group(1)!).toSet();
+
+/// Busca el manifiesto fusionado de la APLICACIÓN, que es el único que importa.
+///
+/// 🔴 Se descartan los de los módulos (`build/<paquete>/...`): cada dependencia genera
+/// el suyo, y si se leyera cualquiera, el muro estaría revisando el manifiesto de una
+/// librería suelta en vez del que va a terminar en el APK. Es un error fácil de cometer
+/// y silencioso — daría verde sobre el archivo equivocado.
+String? _manifiestoFusionado(String raiz) {
+  final dir = Directory('$raiz/build/app/intermediates/merged_manifests');
+  final candidatos = <File>[];
+
+  for (final base in [
+    Directory('$raiz/build/app/intermediates/merged_manifests'),
+    Directory('$raiz/build/app/intermediates/merged_manifest'),
+  ]) {
+    if (!base.existsSync()) continue;
+    candidatos.addAll(base
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((f) => f.path.endsWith('AndroidManifest.xml')));
+  }
+  if (candidatos.isEmpty && dir.existsSync()) return null;
+  if (candidatos.isEmpty) return null;
+
+  // El más reciente: si hay debug y release, vale el último que se compiló.
+  candidatos.sort((a, b) => b.statSync().modified.compareTo(a.statSync().modified));
+  return candidatos.first.readAsStringSync();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────
+// iOS
+// ─────────────────────────────────────────────────────────────────────────────────
+
+/// Comprueba que toda dependencia con código nativo de iOS traiga su manifiesto de
+/// privacidad.
+///
+/// 🔴 POR QUÉ ESTO PUEDE HACER QUE LE REBOTEN LA APP AL INTEGRADOR: desde 2024 Apple
+/// exige que cada SDK de terceros declare qué datos recoge y por qué usa ciertas APIs.
+/// Si una dependencia no trae su `PrivacyInfo.xcprivacy`, el rechazo no le llega al
+/// autor de la dependencia: le llega a quien intentó subir la aplicación.
+void _revisarIos(String raiz) {
+  stdout.writeln('$_negrita  iOS$_fin');
+
+  final cache = _cacheDePaquetes(raiz);
+  if (cache.isEmpty) {
+    stdout.writeln('$_gris    no se pudo leer la lista de paquetes — se saltea$_fin');
+    return;
+  }
+
+  final sinManifiesto = <String>[];
+  var conNativo = 0;
+
+  for (final entrada in cache.entries) {
+    final ios = Directory('${entrada.value}/ios');
+    final darwin = Directory('${entrada.value}/darwin');
+    final carpeta = ios.existsSync() ? ios : (darwin.existsSync() ? darwin : null);
+    if (carpeta == null) continue;
+
+    final archivos = carpeta.listSync(recursive: true).whereType<File>().toList();
+
+    // 🔴 TENER CARPETA `ios/` NO ES TENER CÓDIGO NATIVO. Varios paquetes traen sólo un
+    // `.podspec` que declara una dependencia y nada más — el de la versión web de
+    // Firebase, por ejemplo. Apple no le pide manifiesto a eso, y marcarlo era un falso
+    // positivo del muro en su primera corrida, el 2026-08-31. Se exige código de verdad.
+    final tieneFuentes = archivos.any((f) =>
+        f.path.endsWith('.m') ||
+        f.path.endsWith('.mm') ||
+        f.path.endsWith('.swift') ||
+        f.path.endsWith('.h'));
+    if (!tieneFuentes) continue;
+    conNativo++;
+
+    final tiene = archivos.any((f) => f.path.endsWith('PrivacyInfo.xcprivacy'));
+    if (!tiene) sinManifiesto.add(entrada.key);
+  }
+
+  stdout.writeln('$_gris    $conNativo paquete(s) con código nativo de iOS$_fin');
+
+  if (sinManifiesto.isEmpty) {
+    stdout.writeln('$_verde    ✓ todos traen su manifiesto de privacidad$_fin');
+    return;
+  }
+  // 🔴 AVISA, NO FALLA — y la diferencia está pensada. Un envoltorio de Flutter con
+  // código nativo propio sólo necesita manifiesto si toca alguna de las APIs que Apple
+  // obliga a justificar, y eso no se puede saber leyendo nombres de archivo: casi
+  // siempre el manifiesto lo trae el pod del que depende. Fallar acá haría que el muro
+  // diera rojo por algo que en la mayoría de los casos está bien — y un muro que grita
+  // en falso se termina apagando, que es exactamente lo que no queremos.
+  stdout.writeln(
+      '$_amarillo    ⚠ ${sinManifiesto.length} paquete(s) sin PrivacyInfo.xcprivacy propio$_fin');
+  for (final p in sinManifiesto..sort()) {
+    stdout.writeln('$_amarillo      · $p$_fin');
+  }
+  stdout.writeln(
+      '$_gris      Casi siempre el manifiesto lo trae el pod del que dependen. Antes de$_fin');
+  stdout.writeln(
+      '$_gris      subir a la App Store, confirmalo con quien compile en Xcode.$_fin');
+}
+
+/// Dónde está en disco cada paquete del que depende este proyecto.
+///
+/// Se lee de `.dart_tool/package_config.json`, que es el archivo que genera
+/// `pub get` y que dice exactamente qué versión se está usando — no lo que pide el
+/// `pubspec.yaml`, que puede ser un rango.
+Map<String, String> _cacheDePaquetes(String raiz) {
+  final f = File('$raiz/.dart_tool/package_config.json');
+  if (!f.existsSync()) return {};
+  final salida = <String, String>{};
+
+  // Se parsea a mano con una expresión regular para no depender de `dart:convert` en un
+  // archivo que tiene que poder correr en un entorno mínimo de CI.
+  final texto = f.readAsStringSync();
+  for (final m in RegExp(
+    r'"name"\s*:\s*"([^"]+)"[^}]*?"rootUri"\s*:\s*"([^"]+)"',
+    dotAll: true,
+  ).allMatches(texto)) {
+    final nombre = m.group(1)!;
+    var ruta = m.group(2)!;
+    if (ruta.startsWith('file://')) ruta = Uri.parse(ruta).toFilePath();
+    if (ruta.startsWith('../')) ruta = '$raiz/.dart_tool/$ruta';
+    salida[nombre] = ruta;
+  }
+  return salida;
+}
