@@ -706,20 +706,28 @@ class AkPush {
       // Para el isolate de segundo plano, que no ve nada de esto. Ver H-09.
       await _almacen.guardarCredencial(apiKey, urlNormalizada);
 
-      // ══ LA INSTALACIÓN NACE ACÁ ═══════════════════════════════════════════
-      //
-      // Apenas hay datos del aparato y con quién hablar, sin esperar ni al
-      // permiso ni a que alguien inicie sesión: en el modelo nuevo el aparato
-      // existe primero y el sujeto se enlaza después, en `alIniciarSesion`.
-      // Por eso va sin token —todavía no se pidió permiso— y sin sujeto
-      // —todavía no entró nadie—.
-      await _registrarInstalacion(datos);
-
       _consentimiento = await _almacen.leerConsentimiento();
 
+      // ══ PRIMERO SE PREGUNTA, DESPUÉS SE MANDA ═════════════════════════════
+      //
+      // 🔴 EL ORDEN ESTABA AL REVÉS Y ERA UN AGUJERO DE VERDAD.
+      //
+      // `_registrarInstalacion` corría ACÁ ARRIBA, antes de resolver la
+      // configuración: el primer envío de cada arranque salía con los datos del
+      // aparato **sin haber preguntado nada al comercio**. Por más que la
+      // perilla estuviera apagada, el aparato ya había viajado — y el descarte
+      // del otro lado no devuelve la batería ni el tráfico que costó.
+      //
+      // Ahora la configuración se resuelve primero. Sigue sin esperar al
+      // permiso ni a que alguien inicie sesión —el aparato existe antes que el
+      // sujeto, eso no cambia—, pero ya sabe qué le permitieron antes de hablar.
       final cacheada = await _almacen.leer();
       final config =
           await _resolverConfig(datos.identificadorDePaquete, cacheada);
+
+      // La instalación nace acá: sin token —todavía no se pidió permiso— y sin
+      // sujeto —todavía no entró nadie—.
+      await _registrarInstalacion(datos);
 
       // 🔴 La cuenta cambió. Un token de FCM solo vale dentro del proyecto que
       // lo emitió, así que el que tenemos guardado ya no sirve para nada — y si

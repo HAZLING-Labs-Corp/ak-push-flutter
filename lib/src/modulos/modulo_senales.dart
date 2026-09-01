@@ -88,12 +88,22 @@ class ModuloDeSenales extends Modulo {
         _ultimoMotivo = 'el sistema no devolvió ninguna medición';
         return;
       }
-      await c.api.reportarSenales(
+      final descartadoPorQue = await c.api.reportarSenales(
         sujetoId: id,
         instalacionId: c.instalacionId,
         modulo: nombre,
         senales: medido,
       );
+
+      // 🔴 UN 200 NO ES UN «SE GUARDÓ». El servicio acepta y descarta cuando el comercio
+      // tiene el módulo apagado, y lo dice en el cuerpo. Hasta hoy eso se ignoraba, así que
+      // el diagnóstico afirmaba que había medido bien mientras del otro lado no quedaba
+      // nada. Se anota el motivo y NO se marca la última medición como buena.
+      if (descartadoPorQue != null) {
+        _ultimoMotivo = 'el servicio no lo guardó: $descartadoPorQue';
+        return;
+      }
+
       _ultimaVez = DateTime.now();
       _ultimoMotivo = null;
     } catch (e) {

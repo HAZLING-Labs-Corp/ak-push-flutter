@@ -9,8 +9,20 @@ import '../remote_config.dart';
 /// prestamista quiere una foto al dar de alta; una operadora quiere la calidad de red en el
 /// tiempo; un reparto quiere saber dónde está el repartidor *ahora*. No es más dato ni menos
 /// — es otro reloj, y cada uno cuesta distinto en batería y en tráfico.
+/// 🔴 HOY LA CADENCIA ES UNA DECLARACIÓN, NO UN COMPORTAMIENTO. Nadie la lee: no hay un
+/// `switch` sobre este enum en ningún lado, ni un `Timer`, ni un planificador. La única
+/// invocación de los módulos es `alIniciarSesion`, así que **todos miden en cada inicio de
+/// sesión**, cualquiera sea la cadencia que declaren. Verificado el 2026-09-01.
+///
+/// Se deja escrito en vez de borrarse porque la intención es correcta y sigue siendo el
+/// diseño buscado — pero mientras no haya planificador, esto describe lo que se QUIERE, no
+/// lo que pasa. Quien confíe en «una sola vez» va a medir en cada login.
+///
+/// El único freno real del SDK vive fuera de este mecanismo: las seis horas de
+/// `Ubicacion.minimoEntreLecturas`, aplicadas a mano.
 enum Cadencia {
-  /// Una sola vez, cuando la persona se da de alta. Un perfil del aparato para un puntaje.
+  /// La intención: una sola vez, al darse de alta. Un perfil del aparato para un puntaje.
+  /// Hoy, en la práctica: en cada inicio de sesión.
   episodica,
 
   /// Al abrir la aplicación, con un freno para no repetir. La ubicación aproximada.

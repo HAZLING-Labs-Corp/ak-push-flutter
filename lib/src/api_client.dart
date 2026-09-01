@@ -332,7 +332,8 @@ class AkPushApi {
   /// Va a la instalación, no al sujeto: lo que se midió lo midió un teléfono, y una persona
   /// puede tener dos. Y es un mapa abierto a propósito: cada módulo manda lo suyo sin que
   /// esta firma tenga que cambiar cada vez.
-  Future<void> reportarSenales({
+  /// Devuelve `null` si se guardó, o el MOTIVO si el servicio lo descartó.
+  Future<String?> reportarSenales({
     required String sujetoId,
     required String instalacionId,
     required Map<String, dynamic> senales,
@@ -341,7 +342,7 @@ class AkPushApi {
     /// Por omisión `aparato`, que es donde caía antes: así el APK viejo no cambia.
     String modulo = 'aparato',
   }) async {
-    await _pedir(() => _cliente.post(
+    final r = await _pedir(() => _cliente.post(
           Uri.parse('$baseUrl/api/v1/senales'),
           headers: _cabeceras,
           body: jsonEncode({
@@ -351,6 +352,30 @@ class AkPushApi {
             'senales': senales,
           }),
         ));
+
+    /**
+     * 🔴 SE LEE LO QUE CONTESTÓ, Y ANTES SE TIRABA.
+     *
+     * El servicio acepta con 200 y a veces DESCARTA: cuando el comercio tiene el módulo
+     * apagado devuelve `{ok: true, noSeGuardo: {modulo, porQue}}`. Como el cuerpo se
+     * ignoraba, un descarte era indistinguible de un guardado.
+     *
+     * Medido el 2026-09-01: las señales de un comercio se tiraron durante toda una tarde
+     * mientras el teléfono y la consola decían que todo andaba. Se descubrió por el TAMAÑO
+     * de la respuesta en los registros del servidor —22 bytes contra 106—, que es una forma
+     * absurda de enterarse de algo que el servicio estaba diciendo con palabras.
+     *
+     * Devolver el motivo permite que el módulo lo ponga en su diagnóstico. No se lanza una
+     * excepción: no es un error del que llama, es la configuración del comercio funcionando.
+     */
+    final descarte = r['noSeGuardo'];
+    if (descarte is Map) {
+      final porQue = descarte['porQue'];
+      return porQue is String && porQue.isNotEmpty
+          ? porQue
+          : 'el servicio descartó la medición y no dijo por qué';
+    }
+    return null;
   }
 
   /// ANOTA LO QUE LA PERSONA DECIDIÓ, CON EL TEXTO QUE TENÍA DELANTE.
