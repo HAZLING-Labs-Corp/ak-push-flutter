@@ -22,6 +22,7 @@ import 'ubicacion.dart';
 import 'modulos/modulo.dart';
 import 'modulos/modulo_aparato.dart';
 import 'modulos/modulo_autenticidad.dart';
+import 'modulos/modulo_senales.dart';
 import 'modulos/registro.dart';
 import 'presenter.dart';
 import 'push_message.dart';
@@ -319,6 +320,7 @@ class AkPush {
       final registro = RegistroDeModulos([
         ModuloDeAparato(),
         ModuloDeAutenticidad(),
+        ModuloDeSenales(),
       ]);
       await registro.alEntrar(Contexto(
         api: _api!,

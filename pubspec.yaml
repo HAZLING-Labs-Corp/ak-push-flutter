@@ -53,3 +53,11 @@ dev_dependencies:
   flutter_lints: ^6.0.0
 
 flutter:
+  # 🔴 El paquete pasa a ser plugin porque las señales de nivel 0 —configuración del
+  # sistema, servicios de accesibilidad, sensores, batería a fondo— no se alcanzan desde
+  # Dart. El manifiesto de Android queda VACÍO: ver android/src/main/AndroidManifest.xml.
+  plugin:
+    platforms:
+      android:
+        package: com.hazling.collection
+        pluginClass: SenalesPlugin

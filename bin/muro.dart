@@ -85,12 +85,53 @@ void main(List<String> args) {
   exit(1);
 }
 
+/// 🔴 EL MANIFIESTO DE ESTE PAQUETE — la comprobación que no necesita compilar nada.
+///
+/// Cuando `hz_collection_sdk` pasó a tener código nativo (2026-09-01, para alcanzar las
+/// señales de nivel 0 que desde Dart no se ven), apareció un archivo que **no existía
+/// antes**: `android/src/main/AndroidManifest.xml`. Un permiso escrito ahí se le inyecta a
+/// TODA aplicación que instale el SDK, la use o no, y la aplicación se entera cuando Play
+/// le rechaza la subida. Es exactamente lo que se le midió a CredoLab, cuyos paquetes le
+/// meten READ_CONTACTS y READ_CALENDAR a cualquiera que los instale.
+///
+/// La primera versión del muro no lo miraba: sólo revisaba el manifiesto de una APLICACIÓN
+/// (`android/app/...`), y corrido desde la raíz del paquete decía «sin proyecto Android acá
+/// — se saltea» y daba verde. **Verde sobre el archivo más peligroso del repositorio.** Lo
+/// encontró correr el muro después de agregar el código nativo, no una revisión.
+///
+/// Ésta corre siempre, sin compilar y sin proyecto de aplicación, que es lo que hace que se
+/// corra de verdad.
+void _revisarElManifiestoDeEstePaquete(String raiz) {
+  final f = File('$raiz/android/src/main/AndroidManifest.xml');
+  if (!f.existsSync()) return; // este paquete no tiene código nativo: no hay nada que inyectar
+
+  final permisos = _permisosDe(f.readAsStringSync());
+  if (permisos.isEmpty) {
+    stdout.writeln(
+        '$_verde    ✓ El manifiesto del paquete no declara permisos$_fin'
+        '$_gris  (no le inyecta nada a quien lo instale)$_fin');
+    return;
+  }
+
+  _fallas += permisos.length;
+  stdout.writeln('$_rojo$_negrita    ✗ El manifiesto de ESTE paquete declara '
+      '${permisos.length} permiso(s)$_fin');
+  for (final p in permisos) {
+    stdout.writeln('$_rojo      · $p$_fin');
+  }
+  stdout.writeln('$_gris      Un permiso acá se le inyecta a TODA aplicación que instale el$_fin');
+  stdout.writeln('$_gris      SDK, lo use o no. Va en el manifiesto de la aplicación que lo$_fin');
+  stdout.writeln('$_gris      necesita, nunca acá. Ver android/src/main/AndroidManifest.xml.$_fin');
+}
+
 // ─────────────────────────────────────────────────────────────────────────────────
 // ANDROID
 // ─────────────────────────────────────────────────────────────────────────────────
 
 void _revisarAndroid(String raiz) {
   stdout.writeln('$_negrita  Android$_fin');
+
+  _revisarElManifiestoDeEstePaquete(raiz);
 
   final propio = File('$raiz/android/app/src/main/AndroidManifest.xml');
   if (!propio.existsSync()) {

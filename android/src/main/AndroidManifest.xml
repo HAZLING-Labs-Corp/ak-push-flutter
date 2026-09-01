@@ -1,0 +1,14 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      🔴 ESTE MANIFIESTO ESTÁ VACÍO A PROPÓSITO, Y TIENE QUE SEGUIR ASÍ.
+
+      El paquete tiene código nativo desde el 2026-09-01 —hace falta para leer las señales
+      de nivel 0 que Flutter no alcanza— pero NO declara un solo permiso. Un permiso
+      declarado acá se le inyecta a TODA aplicación que instale el paquete, la use o no:
+      es exactamente el error que se le midió a CredoLab, cuyos paquetes le meten
+      READ_CONTACTS y READ_CALENDAR a cualquiera.
+
+      `bin/muro.dart` comprueba esto en cada compilación y falla si aparece algo. Si algún
+      día hace falta un permiso de verdad, lo declara la APLICACIÓN anfitriona, nunca acá.
+    -->
+</manifest>

@@ -1,0 +1,81 @@
+/// EMITE EL CATÁLOGO DE PERMISOS COMO JSON.
+///
+///     dart run hz_collection_sdk:catalogo > catalogo-de-permisos.json
+///
+/// 🔴 EXISTE PARA QUE NO HAYA DOS CATÁLOGOS. La consola necesita mostrar qué puede pedirle
+/// cada comercio al teléfono y qué hace falta para que se lo aprueben; el servicio necesita
+/// resolverlo contra el rubro. Copiar las fichas a TypeScript habría dejado dos listas que
+/// empiezan iguales y se separan en el primer permiso que se agregue de un solo lado — y
+/// una de las dos decide qué se le muestra a quien administra un comercio.
+///
+/// Así, el catálogo de Dart es la única fuente y el JSON es un artefacto generado. El
+/// servicio lo lee; nadie lo edita a mano.
+///
+/// **Cuándo hay que volver a correrlo:** cada vez que se agregue o cambie una ficha. Si se
+/// olvida, el servicio sirve el catálogo viejo — por eso el JSON lleva la fecha de
+/// generación y el servicio la muestra.
+library;
+
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:hz_collection_sdk/src/permisologia/catalogo_de_permisos.dart';
+
+String _nivel(Nivel n) => switch (n) {
+      Nivel.ninguno => 'ninguno',
+      Nivel.comun => 'comun',
+      Nivel.asusta => 'asusta',
+      Nivel.revisionManual => 'revisionManual',
+    };
+
+String _estado(Estado e) => switch (e) {
+      Estado.libre => 'libre',
+      Estado.condicionado => 'condicionado',
+      Estado.prohibido => 'prohibido',
+    };
+
+void main() {
+  final salida = {
+    'generado': DateTime.now().toUtc().toIso8601String(),
+    'aviso': 'Generado por «dart run hz_collection_sdk:catalogo». No editar a mano: '
+        'la fuente es lib/src/permisologia/catalogo_de_permisos.dart.',
+    'puertaDeDatoSensible': sistemaAdmiteDatoSensible ? 'abierta' : 'cerrada',
+    'motivoPuertaCerrada': motivoPuertaCerrada,
+    'permisos': [
+      for (final p in catalogoDePermisos)
+        {
+          'nombre': p.nombre,
+          'plataforma': p.plataforma.name,
+          'modulo': p.modulo,
+          'paraQue': p.paraQue,
+          'nivel': _nivel(p.nivel),
+          'loAporta': p.loAporta,
+          'esNuestro': p.esNuestro,
+          'dataSafety': p.dataSafety,
+          if (p.manifiestoApple != null) 'manifiestoApple': p.manifiestoApple,
+          if (p.razonApple != null) 'razonApple': p.razonApple,
+          'retencion': {
+            'enPalabras': p.retencion.enPalabras,
+            if (p.retencion.dias != null) 'dias': p.retencion.dias,
+          },
+          'base': p.base.name,
+          'tocaDatoSensible': [for (final d in p.toca) d.name],
+          'porQue': p.disponibilidad.porQue,
+          // 🔴 Ya resuelto por rubro. El servicio no tiene que reimplementar la lógica de
+          // `Disponibilidad.para()` — que es justo la que se habría separado.
+          'porRubro': {
+            for (final r in Rubro.values) r.name: _estado(p.estadoPara(r)),
+          },
+          'requisitos': [
+            for (final q in p.requisitos) {'queHacer': q.queHacer, 'fuente': q.fuente},
+          ],
+        },
+    ],
+    'nuncaSePiden': [
+      for (final e in permisosProhibidos.entries)
+        {'nombre': e.key, 'porQue': e.value},
+    ],
+  };
+
+  stdout.writeln(const JsonEncoder.withIndent('  ').convert(salida));
+}
