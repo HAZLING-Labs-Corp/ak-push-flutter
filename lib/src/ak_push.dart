@@ -275,11 +275,59 @@ class AkPush {
   static Future<void> reportarModal({required bool acepto}) =>
       _yo._reportarModal(acepto: acepto);
 
+  /// ANOTA EN EL SERVICIO LO QUE LA PERSONA DECIDIÓ, CON EL TEXTO QUE LEYÓ.
+  ///
+  /// 🔴 Un solo lugar para las dos decisiones —avisos y ubicación— a propósito. Si cada
+  /// una lo llamara por su cuenta, la que se agregue mañana se va a olvidar, y un
+  /// consentimiento que a veces se anota y a veces no es peor que ninguno: hace creer
+  /// que hay registro.
+  ///
+  /// Se traga cualquier fallo. Es telemetría de cumplimiento y **no puede romperle nada
+  /// a la aplicación anfitriona**: si el servicio no contesta, la persona igual tiene que
+  /// poder seguir usando la app. Lo que se pierde es el registro, no la decisión — que
+  /// vive además en el almacén local.
+  Future<void> _anotarConsentimiento({
+    required String categoria,
+    required bool concedido,
+    required String textoMostrado,
+  }) async {
+    final api = _api;
+    if (api == null) return; // sin init() no hay a quién anotarle nada
+    try {
+      await api.anotarConsentimiento(
+        categoria: categoria,
+        concedido: concedido,
+        // Si el comercio no cargó texto propio, se manda el del SDK: lo que hay que
+        // guardar es lo que la persona TUVO DELANTE, no lo que el comercio escribió.
+        textoMostrado: textoMostrado.trim().isEmpty
+            ? '(el texto por omisión del paquete)'
+            : textoMostrado,
+        // La versión de la configuración del comercio. Es lo que permite saber después
+        // si el texto cambió desde que esta persona lo leyó.
+        versionDelTexto: int.tryParse(_config?.version ?? '') ?? 0,
+        sujetoId: _userId,
+        instalacionId: await _almacen.leerOCrearInstalacionId(),
+        versionDeLaApp: _config?.version,
+        plataforma: Platform.isAndroid ? 'android' : (Platform.isIOS ? 'ios' : null),
+      );
+    } catch (_) {
+      // A propósito: ver el comentario de arriba.
+    }
+  }
+
   Future<void> _reportarModal({required bool acepto}) async {
     _consentimiento =
         _consentimiento.conModal(acepto: acepto, cuando: DateTime.now());
     await _almacen.guardarConsentimiento(_consentimiento);
     await _almacen.anotarQueSePregunto();
+
+    // Queda anotado en el servicio, con el texto que tuvo delante. Es la prueba, y sin
+    // ella el registro dice que apretó un botón pero no a qué dijo que sí.
+    await _anotarConsentimiento(
+      categoria: 'avisos',
+      concedido: acepto,
+      textoMostrado: '${politica.textos.titulo}\n${politica.textos.cuerpo}',
+    );
 
     // Un «ahora no» hay que reportarlo al servicio: el comercio necesita
     // distinguirlo de quien nunca vio la pregunta, y sin esto los dos se ven
@@ -461,14 +509,33 @@ class AkPush {
         return false;
       }
 
-      final quiere = await ModalDeUbicacion.mostrar(
-        ctx,
-        textos: _politicaDeUbicacion.textos,
+      final textos = _politicaDeUbicacion.textos;
+      final quiere = await ModalDeUbicacion.mostrar(ctx, textos: textos);
+
+      // 🔴 SE ANOTA EL «NO» IGUAL QUE EL «SÍ», y esa simetría importa: sin el rechazo
+      // anotado, alguien que dijo que no y alguien a quien nunca se le preguntó se ven
+      // idénticos —los dos sin registro— y son dos situaciones opuestas. A la primera hay
+      // que dejarla en paz; a la segunda hay que preguntarle.
+      final queLeyo = '${textos.titulo}\n${textos.cuerpo}';
+      await _anotarConsentimiento(
+        categoria: 'ubicacion',
+        concedido: quiere,
+        textoMostrado: queLeyo,
       );
       if (!quiere) return false;
 
       final concedido = await _ubicacion.pedir();
-      if (!concedido) return false;
+      if (!concedido) {
+        // Aceptó en nuestro modal y después dijo que no en el del sistema. Es un «no» y
+        // se anota como tal: el consentimiento vale por lo que terminó pasando, no por lo
+        // que la persona contestó a mitad de camino.
+        await _anotarConsentimiento(
+          categoria: 'ubicacion',
+          concedido: false,
+          textoMostrado: queLeyo,
+        );
+        return false;
+      }
 
       // 🔴 EL PERMISO NO ALCANZA: FALTA QUE EL TELÉFONO TENGA LA UBICACIÓN PRENDIDA.
       //

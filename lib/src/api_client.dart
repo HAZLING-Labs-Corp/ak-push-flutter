@@ -348,6 +348,40 @@ class AkPushApi {
         ));
   }
 
+  /// ANOTA LO QUE LA PERSONA DECIDIÓ, CON EL TEXTO QUE TENÍA DELANTE.
+  ///
+  /// 🔴 MANDA EL TEXTO MOSTRADO, y el servicio rechaza si falta. No es burocracia: el
+  /// texto del comercio cambia, y dentro de un año «aceptó» sin el texto es anotar que
+  /// alguien apretó un botón. Lo que hay que poder demostrar es a QUÉ dijo que sí.
+  ///
+  /// Es telemetría de cumplimiento: nunca puede romperle nada a la aplicación anfitriona,
+  /// así que quien la llama envuelve la llamada y se traga el fallo.
+  Future<void> anotarConsentimiento({
+    required String categoria,
+    required bool concedido,
+    required String textoMostrado,
+    required int versionDelTexto,
+    String? sujetoId,
+    String? instalacionId,
+    String? versionDeLaApp,
+    String? plataforma,
+  }) async {
+    await _pedir(() => _cliente.post(
+          Uri.parse('$baseUrl/api/v1/consentimiento'),
+          headers: _cabeceras,
+          body: jsonEncode({
+            'categoria': categoria,
+            'decision': concedido ? 'concedido' : 'revocado',
+            'textoMostrado': textoMostrado,
+            'versionDelTexto': versionDelTexto,
+            if (sujetoId != null) 'sujetoId': sujetoId,
+            if (instalacionId != null) 'instalacionId': instalacionId,
+            if (versionDeLaApp != null) 'versionDeLaApp': versionDeLaApp,
+            if (plataforma != null) 'plataforma': plataforma,
+          }),
+        ));
+  }
+
   /// LA DIRECCIÓN DE ESTA INSTALACIÓN, SIN NECESIDAD DE QUE HAYA NADIE LOGUEADO.
   ///
   /// El token pertenece al APARATO. Antes sólo llegaba al servidor dentro del alta de un
