@@ -8,7 +8,6 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hz_collection_sdk/src/permisologia/catalogo_de_permisos.dart';
-import 'package:hz_collection_sdk/src/permisologia/rubros.dart';
 
 void main() {
   puertaDeDatoSensible();

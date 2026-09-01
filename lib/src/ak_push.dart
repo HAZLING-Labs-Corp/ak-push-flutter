@@ -19,6 +19,10 @@ import 'politica.dart';
 import 'sesion.dart';
 import 'modal_de_ubicacion.dart';
 import 'ubicacion.dart';
+import 'modulos/modulo.dart';
+import 'modulos/modulo_aparato.dart';
+import 'modulos/modulo_autenticidad.dart';
+import 'modulos/registro.dart';
 import 'presenter.dart';
 import 'push_message.dart';
 import 'remote_config.dart';
@@ -286,6 +290,30 @@ class AkPush {
   /// a la aplicación anfitriona**: si el servicio no contesta, la persona igual tiene que
   /// poder seguir usando la app. Lo que se pierde es el registro, no la decisión — que
   /// vive además en el almacén local.
+  /// Corre los módulos que no piden ningún permiso.
+  ///
+  /// 🔴 `avisos` NO pasa por acá y es deliberado: es el único que hoy funciona en
+  /// producción, y moverlo al registro es un cambio con riesgo propio que está anotado
+  /// aparte. Mover la ubicación no podía romper un envío; mover los avisos sí.
+  Future<void> _correrModulos() async {
+    final id = _userId;
+    if (id == null || _api == null) return;
+    try {
+      final registro = RegistroDeModulos([
+        ModuloDeAparato(),
+        ModuloDeAutenticidad(),
+      ]);
+      await registro.alEntrar(Contexto(
+        api: _api!,
+        instalacionId: await _almacen.leerOCrearInstalacionId(),
+        sujetoId: id,
+        config: _config,
+      ));
+    } catch (_) {
+      // Ninguna señal vale romperle el inicio de sesión a nadie.
+    }
+  }
+
   Future<void> _anotarConsentimiento({
     required String categoria,
     required bool concedido,
@@ -1259,6 +1287,21 @@ class AkPush {
     // No se espera el resultado: el inicio de sesión de la aplicación no se queda
     // colgado detrás de un modal que la persona puede dejar abierto un minuto.
     unawaited(_ofrecerUbicacion(forzar: false));
+
+    // ── LOS MÓDULOS DE NIVEL 0 ──────────────────────────────────────────────
+    //
+    // 🔴 HASTA HOY EL REGISTRO DE MÓDULOS ERA CÓDIGO MUERTO. Existía, estaba probado, y
+    // nadie lo armaba ni lo corría: `aparato` nunca midió nada en producción, y el módulo
+    // de autenticidad habría sido el tercero en la lista de cosas que existen y no se
+    // ejecutan. Medido el 2026-09-01.
+    //
+    // Se corren acá, después de que el sujeto quedó enlazado, porque necesitan saber a
+    // quién pertenece lo que miden. Y sin esperar: son señales, y ninguna vale que el
+    // inicio de sesión tarde un segundo más.
+    //
+    // El registro los corre en paralelo, con ocho segundos de tope cada uno y un try por
+    // módulo. Uno que falle o que se cuelgue no arrastra a los otros ni al push.
+    unawaited(_correrModulos());
 
     // 🔴 Y A QUIEN YA DIO EL PERMISO, SE LE LEE LA POSICIÓN.
     //
