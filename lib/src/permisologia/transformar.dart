@@ -120,6 +120,14 @@ class CampoRecolectado {
   /// y al comercio para qué. Se muestra junto al «qué manda», en la consola y en la app.
   final String? paraQue;
 
+  /// 🔴 ¿Este valor lo DERIVA nuestro código, o es una lectura directa del sistema?
+  /// «computada» = la calculamos (una comparación, un conteo, un tramo, una condición);
+  /// «cruda» = sale tal cual del aparato. Lo pidió Juan el 2026-09-01 para mostrarlo en la
+  /// consola: quien mira los datos tiene que poder distinguir un hecho del teléfono de una
+  /// conclusión nuestra. Toda transformación que no sea `taICual` es computada por definición;
+  /// esto marca además las `taICual` que igual derivamos (un booleano calculado, un conteo).
+  final bool computada;
+
   /// Para `tramo`: de cuánto es cada escalón.
   final int tramoDe;
 
@@ -128,6 +136,7 @@ class CampoRecolectado {
     this.como, {
     required this.queManda,
     this.paraQue,
+    this.computada = false,
     this.tramoDe = 10,
   });
 

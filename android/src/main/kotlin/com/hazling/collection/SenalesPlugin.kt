@@ -11,6 +11,8 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
 import android.os.Build
+import android.os.PowerManager
+import android.app.NotificationManager
 import android.os.SystemClock
 import android.os.UserManager
 import android.provider.Settings
@@ -100,6 +102,7 @@ class SenalesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         putAll(redProfunda())
         putAll(huellaDigital())
         putAll(canalesAlcanzables())
+        putAll(entregabilidad())
     }
 
     /** Corre una lectura y se traga el fallo. Lo que no se pudo leer no aparece. */
@@ -466,5 +469,61 @@ class SenalesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         // PoC: log para verificación inmediata, sin dar la vuelta por la consola.
         val presentes = filterValues { it == true }.keys.joinToString(", ")
         android.util.Log.i("Collection", "canales alcanzables (instaladas): $presentes")
+    }
+
+    /**
+     * ENTREGABILIDAD — ¿este push va a LLEGAR y lo va a VER? Todo sin pedir un permiso.
+     *
+     * Son las señales que más predicen si un aviso llega de verdad, y que casi ningún colector
+     * mide: el ahorro de batería y el Doze demoran o matan el push con la pantalla apagada; la
+     * restricción en segundo plano lo corta; el No molestar lo silencia; y un canal en cero es
+     * un "sí" al permiso general con un "no" a ESE aviso. El teléfono manda los hechos; el
+     * proveedor arma con ellos su índice de entregabilidad en el servidor.
+     */
+    private fun entregabilidad(): Map<String, Any?> = buildMap {
+        val pm = intentar { contexto.getSystemService(Context.POWER_SERVICE) as PowerManager }
+        val nm = intentar { contexto.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager }
+
+        // ¿Puede recibir avisos, a nivel del sistema? El permiso general.
+        intentar { nm?.areNotificationsEnabled() }?.let { put("ent_avisos_permitidos", it) }
+
+        // Cuántos de NUESTROS canales están silenciados (importancia en cero). Un "sí" general
+        // con un canal apagado hace que ese aviso no suene aunque el permiso esté dado.
+        intentar {
+            if (Build.VERSION.SDK_INT >= 26 && nm != null) {
+                nm.notificationChannels.count { it.importance == NotificationManager.IMPORTANCE_NONE }
+            } else null
+        }?.let { put("ent_canales_silenciados", it) }
+
+        // Doze: ¿la app está exenta de la optimización de batería? Si NO, el push se demora.
+        intentar { pm?.isIgnoringBatteryOptimizations(contexto.packageName) }
+            ?.let { put("ent_exento_de_doze", it) }
+
+        // ¿El sistema restringió la app en segundo plano? Ahí el push directamente no llega.
+        intentar {
+            if (Build.VERSION.SDK_INT >= 28) {
+                val am = contexto.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                am.isBackgroundRestricted
+            } else null
+        }?.let { put("ent_restringida_en_segundo_plano", it) }
+
+        // Ahorro de batería activo → entrega demorada.
+        intentar { pm?.isPowerSaveMode }?.let { put("ent_ahorro_de_bateria", it) }
+
+        // No molestar: 1 todo, 2 prioridad, 3 nada, 4 alarmas.
+        intentar {
+            if (Build.VERSION.SDK_INT >= 23) nm?.currentInterruptionFilter else null
+        }?.let { put("ent_modo_no_molestar", it) }
+
+        // ¿La pantalla está encendida ahora? Es la señal de actividad más directa, sin permiso.
+        intentar { pm?.isInteractive }?.let { put("ent_pantalla_encendida", it) }
+
+        // Nivel de señal de la antena, 0 a 4. Desde Android 9 se lee sin permiso.
+        intentar {
+            if (Build.VERSION.SDK_INT >= 28) {
+                val tm = contexto.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+                tm.signalStrength?.level
+            } else null
+        }?.let { put("ent_nivel_de_senal", it) }
     }
 }

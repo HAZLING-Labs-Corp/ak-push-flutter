@@ -31,7 +31,7 @@ void main() {
     });
 
     test('ningún grupo quedó sin campos', () {
-      for (final prefijo in ['cfg_', 'acc_', 'bat_', 'sen_', 'usr_', 'red_', 'hd_', 'canal_']) {
+      for (final prefijo in ['cfg_', 'acc_', 'bat_', 'sen_', 'usr_', 'red_', 'hd_', 'canal_', 'ent_']) {
         expect(camposDeSenales.any((c) => c.nombre.startsWith(prefijo)), isTrue,
             reason: 'el grupo «$prefijo» no tiene ni un campo declarado');
       }
