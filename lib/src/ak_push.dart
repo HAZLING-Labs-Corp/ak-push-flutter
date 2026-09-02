@@ -163,6 +163,14 @@ class AkPush {
   DateTime? _registradoEl;
   AkPushError? _ultimoError;
 
+  /// POR QUÉ ESTE ARRANQUE NO TIENE AVISOS, cuando todo lo demás sí funciona.
+  ///
+  /// 🔴 Antes esto no existía porque no hacía falta: sin configuración de Firebase el
+  /// arranque entero fallaba, así que no había un estado intermedio que describir. Desde el
+  /// 2026-09-01 sí lo hay —el SDK recolecta aunque no pueda notificar— y ese estado tiene que
+  /// ser legible, o sería peor que el fallo: una app que parece andar bien y no notifica.
+  AkPushError? _sinAvisosPorque;
+
   final StreamController<PushMessage> _recibidos =
       StreamController<PushMessage>.broadcast();
   final StreamController<PushMessage> _tocados =
@@ -269,6 +277,19 @@ class AkPush {
   /// para que la aplicación pueda mostrar, por ejemplo, qué le falta activar a
   /// este comercio, sin tener que conocer el catálogo de memoria.
   static Map<String, InfoDeModulo> get modulos => _yo._config?.modulos ?? const {};
+
+  /// POR QUÉ ESTE ARRANQUE NO TIENE AVISOS, aunque el resto del SDK funcione.
+  ///
+  /// `null` cuando los avisos están en pie. Con valor cuando el SDK arrancó, dio de alta la
+  /// instalación y va a recolectar, pero **no puede notificar** — porque el paquete de esta
+  /// aplicación no está en el inventario del comercio, o porque su configuración de Firebase
+  /// está incompleta del lado del proveedor.
+  ///
+  /// 🔴 Se expone porque, desde que recolectar y notificar están separados, este estado
+  /// intermedio es el más engañoso de todos: la app arranca, los datos llegan, la consola se
+  /// ve viva, y los avisos no salen. Sin un lugar donde preguntarlo, la única forma de
+  /// enterarse es que alguien note que hace días que no le llega nada.
+  static AkPushError? get sinAvisosPorque => _yo._sinAvisosPorque;
 
   /// La aplicación avisa qué contestó la persona **en su propio modal**.
   ///
@@ -693,6 +714,7 @@ class AkPush {
     // Un reintento que funciona no puede seguir reportando el error de la vez
     // pasada: el diagnóstico diría que está roto algo que ya se arregló.
     _ultimoError = null;
+    _sinAvisosPorque = null;
 
     try {
       final datos = await DatosDelDispositivo.recolectar();
@@ -722,8 +744,34 @@ class AkPush {
       // permiso ni a que alguien inicie sesión —el aparato existe antes que el
       // sujeto, eso no cambia—, pero ya sabe qué le permitieron antes de hablar.
       final cacheada = await _almacen.leer();
-      final config =
-          await _resolverConfig(datos.identificadorDePaquete, cacheada);
+
+      // ══ RECOLECTAR Y NOTIFICAR SON COSAS SEPARADAS ════════════════════════
+      //
+      // 🔴 ANTES, LA FALTA DE FIREBASE APAGABA TODO EL SDK. `_resolverConfig`
+      // propagaba el desacuerdo de paquete y `init()` moría ahí: no se daba de
+      // alta la instalación, no corrían los módulos, no se medía ni una señal.
+      // Un comercio que sólo quisiera recolectar datos quedaba obligado a tener
+      // un proyecto de Firebase configurado, y una app iOS sin registrar perdía
+      // también la ubicación y la autenticidad, que no tienen nada que ver.
+      //
+      // Medido el 2026-09-01: la app de Multivalores en iPhone no reportaba NADA
+      // —cero campos de aparato, cero señales— y la única causa era que su
+      // paquete de iOS no estaba en el inventario del comercio.
+      //
+      // Ahora el desacuerdo de paquete deja el SDK andando **sin avisos**, y se
+      // anota por qué. Lo que sí sigue tumbando el arranque es una llave
+      // rechazada: sin credencial válida no hay nada que hacer del otro lado, y
+      // seguir sería fingir que se está recolectando.
+      AkPushConfig? config;
+      try {
+        config = await _resolverConfig(datos.identificadorDePaquete, cacheada);
+      } on AkPushError catch (e) {
+        if (e.code != AkPushErrorCode.appMismatch) rethrow;
+        _sinAvisosPorque = e;
+        // También en `_ultimoError`, que es lo que ya lee el diagnóstico. Que el SDK
+        // esté recolectando no vuelve esto un detalle: los avisos NO funcionan.
+        _ultimoError = e;
+      }
 
       // La instalación nace acá: sin token —todavía no se pidió permiso— y sin
       // sujeto —todavía no entró nadie—.
@@ -736,6 +784,13 @@ class AkPush {
       // remota, y el único momento en que se puede atajar es acá.
       // El servidor manda. Si todavía no sirve el campo, `config.politica` es la
       // de siempre y no piso lo que declaró la aplicación.
+      if (config == null) {
+        // Sin configuración no hay avisos, y no hay nada más que preparar acá: la
+        // instalación ya quedó dada de alta arriba y los módulos corren al iniciar
+        // sesión, que es donde siempre corrieron.
+        return;
+      }
+
       if (config.trajoPolitica) _politica = config.politica;
       _politicaDeUbicacion = config.ubicacion;
 

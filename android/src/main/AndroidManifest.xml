@@ -11,4 +11,24 @@
       `bin/muro.dart` comprueba esto en cada compilación y falla si aparece algo. Si algún
       día hace falta un permiso de verdad, lo declara la APLICACIÓN anfitriona, nunca acá.
     -->
+    <!--
+      PRUEBA DE CONCEPTO (2026-09-01): detección de PRESENCIA de apps, para el mapa de
+      "canales alcanzables". Esto NO es un permiso — es <queries>, la forma que Google Play
+      SÍ permite de preguntar por paquetes PUNTUALES sin `QUERY_ALL_PACKAGES` (que sí saca de
+      la tienda). No dice si la app está activa, sólo si está instalada. iOS no tiene equivalente.
+    -->
+    <queries>
+        <package android:name="com.whatsapp" />
+        <package android:name="com.whatsapp.w4b" />
+        <package android:name="org.telegram.messenger" />
+        <package android:name="com.facebook.orca" />
+        <package android:name="com.facebook.katana" />
+        <package android:name="com.instagram.android" />
+        <package android:name="org.thoughtcrime.securesms" />
+        <package android:name="com.google.android.apps.messaging" />
+        <package android:name="com.google.android.gm" />
+        <package android:name="com.android.chrome" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.android.vending" />
+    </queries>
 </manifest>

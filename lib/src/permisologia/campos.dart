@@ -72,6 +72,10 @@ const List<GrupoDeSenales> gruposDeSenales = [
   GrupoDeSenales('red_', 'Red',
       'Por dónde está conectado y a qué velocidad, y si hay una VPN activa. No se manda el '
       'nombre de la red WiFi: el nombre de una red doméstica identifica un hogar.'),
+  GrupoDeSenales('canal_', 'Canales alcanzables',
+      'Qué apps de contacto tiene instaladas —WhatsApp, Telegram, redes—, para elegir por dónde '
+      'mandarle. Sólo dice si están instaladas, NO si están activas ni qué hace en ellas. Es la '
+      'lista puntual que Google Play permite, sin ver todas las apps del teléfono.'),
   GrupoDeSenales('usr_', 'Perfil de usuario',
       'Si la aplicación corre en el usuario principal del teléfono o en un perfil secundario, '
       'y si el aparato está en modo demostración.'),
@@ -378,4 +382,33 @@ const List<CampoRecolectado> camposDeSenales = [
   CampoRecolectado('hd_teclados', Transformacion.taICual,
       queManda: 'cuántos teclados tiene configurados. No se manda cuáles',
       paraQue: 'Comportamiento: cuántos teclados tiene, pista de un teléfono en uso real. No se lee cuál.'),
+
+  // ── Canales alcanzables (prueba de concepto) ──────────────────────────────────────────
+  CampoRecolectado('canal_whatsapp', Transformacion.taICual,
+      queManda: 'si tiene WhatsApp instalado',
+      paraQue: 'Alcance: permite mandarle por WhatsApp si el push no llega. Sólo instalado, no si lo usa.'),
+  CampoRecolectado('canal_whatsapp_business', Transformacion.taICual,
+      queManda: 'si tiene WhatsApp Business instalado',
+      paraQue: 'Alcance: un canal de contacto más; suele indicar un comercio o emprendedor.'),
+  CampoRecolectado('canal_telegram', Transformacion.taICual,
+      queManda: 'si tiene Telegram instalado',
+      paraQue: 'Alcance: canal alternativo de mensajería.'),
+  CampoRecolectado('canal_messenger', Transformacion.taICual,
+      queManda: 'si tiene Facebook Messenger instalado',
+      paraQue: 'Alcance: otro canal de mensajería directo.'),
+  CampoRecolectado('canal_facebook', Transformacion.taICual,
+      queManda: 'si tiene Facebook instalado',
+      paraQue: 'Alcance y perfil: presencia en la red; canal para campañas.'),
+  CampoRecolectado('canal_instagram', Transformacion.taICual,
+      queManda: 'si tiene Instagram instalado',
+      paraQue: 'Alcance y perfil: presencia en la red; público más joven.'),
+  CampoRecolectado('canal_signal', Transformacion.taICual,
+      queManda: 'si tiene Signal instalado',
+      paraQue: 'Perfil: quien usa Signal cuida su privacidad; dato de segmentación.'),
+  CampoRecolectado('canal_sms_rcs', Transformacion.taICual,
+      queManda: 'si tiene la app de Mensajes de Google (SMS/RCS)',
+      paraQue: 'Alcance: confirma que el canal de mensajes de texto está disponible.'),
+  CampoRecolectado('canal_gmail', Transformacion.taICual,
+      queManda: 'si tiene Gmail instalado',
+      paraQue: 'Alcance: canal de correo disponible en el teléfono.'),
 ];

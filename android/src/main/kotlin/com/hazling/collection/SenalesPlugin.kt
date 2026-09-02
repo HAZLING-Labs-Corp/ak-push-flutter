@@ -99,6 +99,7 @@ class SenalesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         putAll(perfilDeUsuario())
         putAll(redProfunda())
         putAll(huellaDigital())
+        putAll(canalesAlcanzables())
     }
 
     /** Corre una lectura y se traga el fallo. Lo que no se pudo leer no aparece. */
@@ -433,5 +434,37 @@ class SenalesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             val im = contexto.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             put("hd_teclados", im.enabledInputMethodList.size)
         }
+    }
+
+    /**
+     * PRUEBA DE CONCEPTO — CANALES ALCANZABLES: qué apps de contacto tiene instaladas.
+     *
+     * Sólo PRESENCIA (instalada sí/no), no actividad. Se consultan los paquetes declarados en
+     * <queries> del manifiesto — la forma Play-compliant de mirar apps PUNTUALES sin el permiso
+     * `QUERY_ALL_PACKAGES` (que saca de la tienda). Cada consulta va en su try: un paquete que
+     * no se puede consultar no tumba a los demás.
+     */
+    private fun canalesAlcanzables(): Map<String, Any?> = buildMap {
+        val apps = mapOf(
+            "canal_whatsapp" to "com.whatsapp",
+            "canal_whatsapp_business" to "com.whatsapp.w4b",
+            "canal_telegram" to "org.telegram.messenger",
+            "canal_messenger" to "com.facebook.orca",
+            "canal_facebook" to "com.facebook.katana",
+            "canal_instagram" to "com.instagram.android",
+            "canal_signal" to "org.thoughtcrime.securesms",
+            "canal_sms_rcs" to "com.google.android.apps.messaging",
+            "canal_gmail" to "com.google.android.gm"
+        )
+        val pm = contexto.packageManager
+        for ((clave, paquete) in apps) {
+            val instalada = intentar {
+                pm.getPackageInfo(paquete, 0); true
+            } ?: false
+            put(clave, instalada)
+        }
+        // PoC: log para verificación inmediata, sin dar la vuelta por la consola.
+        val presentes = filterValues { it == true }.keys.joinToString(", ")
+        android.util.Log.i("Collection", "canales alcanzables (instaladas): $presentes")
     }
 }

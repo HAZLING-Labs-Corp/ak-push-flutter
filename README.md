@@ -1,6 +1,10 @@
 # hz_collection_sdk
 
-Recibir notificaciones push con una llave y una línea.
+Recolectar datos del aparato y recibir notificaciones push, con una llave y una línea.
+
+> **Si venías del manual anterior:** este SDK dejaba de ser sólo de push. Los avisos son ahora
+> **uno de cinco módulos**, y cuáles corren lo decide el comercio desde la consola, no tu
+> código. Ver [Los módulos](#los-módulos-el-sdk-ya-no-es-sólo-avisos).
 
 ```yaml
 dependencies:
@@ -51,8 +55,14 @@ Cuando cierra sesión:
 await AkPush.alCerrarSesion();
 ```
 
-Eso es todo. **No pegás ningún archivo de configuración en el proyecto.** La cuenta
-de Google la sirve nuestro servidor en cada arranque.
+Eso es todo. **No pegás ningún archivo de configuración en el proyecto** — ni
+`google-services.json`, ni `GoogleService-Info.plist`. La cuenta de Google la sirve nuestro
+servidor en cada arranque, y por eso se le puede cambiar la cuenta a un comercio sin que
+publiques una versión nueva.
+
+Con esas dos líneas ya corren también los módulos que el comercio tenga activos: las señales
+del aparato, la autenticidad y —si lo activó— la ubicación, que el SDK ofrece con su propia
+pantalla.
 
 ---
 
@@ -119,6 +129,85 @@ await AkPush.init(
 ```
 
 Cuando el servicio la mande, gana la del servidor.
+
+---
+
+## Los módulos: el SDK ya no es sólo avisos
+
+Cada cosa que el SDK mide es un **módulo**, y **el comercio decide cuáles corren** desde la
+consola. Tu código no los prende ni los apaga: llegan resueltos en la configuración.
+
+```dart
+AkPush.modulos          // {'avisos': …, 'senales': …, 'ubicacion': …}
+AkPush.modulos['senales']?.estado    // 'activo' · 'declarado'
+```
+
+| Módulo | Qué mide | Permiso | Nace |
+|---|---|---|---|
+| `avisos` | la dirección para notificar, y qué se hizo con cada aviso | notificaciones | prendido |
+| `autenticidad` | si es un teléfono de verdad o un emulador | ninguno | prendido |
+| `senales` | ~90 propiedades del aparato — ver abajo | **ninguno** | apagado |
+| `ubicacion` | la zona, no la dirección exacta | ubicación | apagado |
+| `rastreo` | ubicación en segundo plano | ubicación de fondo | apagado |
+
+`declarado` no es `activo`: significa que el módulo existe pero **este comercio no lo puede
+usar**, porque su rubro no lo permite. Un comercio de préstamo personal no rastrea a nadie
+aunque prenda el interruptor.
+
+🔴 **Nada de esto lo decidís vos, y es a propósito.** Si un comercio pudiera activar la
+recolección desde el código de su app, la consola dejaría de ser la fuente de verdad de qué se
+recolecta — y eso es justamente lo que hay que poder mostrarle a un auditor.
+
+---
+
+## Las señales, y por qué hay que contarlas
+
+`senales` mide propiedades del aparato **sin pedir un solo permiso**: configuración, batería,
+sensores, red, y la huella —idioma, zona horaria, modelo, hora local—. Ninguna dice quién es la
+persona; dicen cómo está configurado el teléfono y si se comporta como uno de verdad.
+
+🔴 **ANDROID MIDE ~90 CAMPOS. iOS MIDE 33. Y ESA DIFERENCIA NO SE DISIMULA.**
+
+Medido el 2026-09-01 con la misma app en las dos plataformas: 88 campos en Android, 33 en
+iPhone. No es un error ni algo que se vaya a emparejar: en iOS **no existen** la configuración
+del sistema (`cfg_`), la enumeración de servicios de accesibilidad (`acc_`) ni el multiusuario
+(`usr_`). Apple no los expone.
+
+**Lo que no se puede medir no viaja.** No se rellena con ceros. Y eso es una decisión, no un
+descuido: un cero diría «se midió y dio cero», que es distinto de «no se pudo medir». Si se
+rellenara, un puntaje trataría a todos los iPhone como el mismo teléfono raro — y peor, creería
+que la señal de control remoto se midió y salió negativa, cuando nunca se midió.
+
+> **Quien consuma estos datos tiene que mirar CUÁNTOS campos llegaron antes de interpretarlos.**
+> Comparar un aparato de 88 campos con uno de 33 como si fueran lo mismo es la forma más fácil
+> de sacar una conclusión falsa con datos correctos.
+
+Y ojo con un caso más: en un **simulador** los sensores llegan en `false` y la red en `0` porque
+de verdad no existen, no porque el teléfono sea raro. `autenticidad` lo dice aparte:
+
+```dart
+// esFisico: false · pareceEmulador: true
+```
+
+---
+
+## Cuando el comercio no tiene Firebase configurado
+
+**El SDK arranca igual y recolecta igual.** Desde el 2026-09-01, que le falte la configuración
+de Firebase —o que el paquete de tu app no esté registrado en el comercio— ya no tumba el
+arranque: se dan de alta la instalación y los módulos, y **sólo los avisos quedan apagados**.
+
+```dart
+AkPush.sinAvisosPorque    // null si los avisos están en pie
+```
+
+Antes, un paquete sin registrar apagaba **todo**: ni señales, ni ubicación, ni autenticidad —
+cosas que no tienen nada que ver con notificar. Se separó porque recolectar y notificar son dos
+trabajos distintos.
+
+🔴 **Y por eso hay que mirar ese campo.** Es el estado más engañoso que tiene el SDK: la app
+arranca, los datos llegan, la consola se ve viva, y los avisos no salen. Sin preguntar por qué,
+la única forma de enterarse es que alguien note que hace días que no le llega nada.
 
 ---
 
@@ -214,7 +303,39 @@ Sin eso, los avisos que llegan con la app cerrada caen en un canal que no existe
 
 ### iOS
 
-Activar *Push Notifications* en las capacidades del proyecto en Xcode.
+Desde el 2026-09-01 el SDK **tiene lado nativo de iOS** (`ios/Classes/SenalesPlugin.swift`) y
+mide 33 señales. Antes devolvía un mapa vacío y nadie se enteraba.
+
+**1 · Capacidades en Xcode:** activar *Push Notifications*. Y si tu comercio usa avisos en
+segundo plano, *Background Modes → Remote notifications*.
+
+**2 · Textos de permiso en `Info.plist`.** Sin el texto, iOS **no muestra el diálogo**: lo
+niega en silencio, y el síntoma es que el permiso «no se pudo pedir» sin ninguna causa visible.
+
+```xml
+<key>NSLocationWhenInUseUsageDescription</key>
+<string>Para avisarte de operaciones que no reconozcas y mostrarte la oficina más cercana.</string>
+```
+
+Ese texto lo lee la persona en el diálogo del sistema: escribilo con la voz de tu comercio.
+
+**3 · 🔴 La llave de APNs, que no existe en Android.** Para que un push llegue a un iPhone,
+Firebase necesita una llave de APNs de tu cuenta de Apple, cargada en la consola de Firebase.
+**Sin ella el envío se acepta, queda registrado como enviado, y no llega.** No hay error en
+ningún lado. Es el candidato número uno a «el push no llega y no sé por qué».
+
+La llave es del **equipo de Apple**, no de la app: una sola sirve para todas tus apps de iOS.
+Apple permite un máximo de dos por cuenta, y el archivo `.p8` **se descarga una sola vez**.
+
+**Lo que el SDK deliberadamente NO mide en iOS**, aunque podría: la lista de teclados
+instalados y el tiempo desde el arranque. Las dos son *Required Reason APIs* de Apple y
+obligan a declarar un motivo aprobado en la ficha de privacidad. No valen lo que cuestan.
+
+**Y una diferencia de comportamiento que conviene tener a la vista:** el módulo de ubicación
+pide precisión aproximada, y **Android la respeta y iOS no**. Medido: Android devolvió 2000 m,
+iPhone devolvió 5 m con la misma configuración. iOS no tiene un permiso «sólo aproximado»
+equivalente. Si tu pantalla le promete a la persona «es la zona, no la dirección exacta»,
+en iPhone hoy esa promesa se cumple a medias.
 
 ---
 
@@ -624,6 +745,57 @@ para siempre en un chat.
 Si dice que la cadena está entera y aun así no llegan, el problema no está en el
 teléfono: está en el envío. Revisá en el panel si salió y qué contestó el
 proveedor.
+
+---
+
+## Lo que podés llamar, todo junto
+
+Referencia corta. Cada una está explicada en su sección.
+
+**Arranque y sesión**
+
+```dart
+await AkPush.init(llave: …, url: …, pedirPermisoAlIniciar: false);
+await AkPush.alIniciarSesion(userId: 'u_123');
+await AkPush.alCerrarSesion();
+AkPush.comercio                 // contra qué comercio estás
+```
+
+**Avisos**
+
+```dart
+await AkPush.estadoDeAvisos();  // cómo están, en lenguaje llano
+await AkPush.resolverAvisos();  // el botón que sirva EN ESTE estado
+AkPush.campanita();             // el widget con punto rojo y su hoja
+AkPush.tienePermiso
+AkPush.sinAvisosPorque          // null si están en pie
+```
+
+🔴 **`resolverAvisos()` es el que conviene usar, y no `pedirPermiso()`.** Hay tres estados
+—el sistema todavía pregunta, ya no pregunta más, o ya están activados— y cada uno necesita
+una acción distinta: levantar el diálogo, abrir los Ajustes, o no hacer nada. **Tu app no
+tiene que saber en cuál está.** Si llamás al diálogo cuando el sistema ya no lo muestra, la
+persona toca «Permitir», no pasa nada, y no hay forma de explicárselo.
+
+**Ubicación**
+
+```dart
+await AkPush.ofrecerUbicacion();     // con la pantalla del SDK
+AkPush.politicaDeUbicacion
+await AkPush.tieneUbicacion;
+```
+
+Si tu comercio la configuró en `despuesDeEntrar`, el SDK la ofrece **solo** al iniciar sesión y
+no tenés que llamar nada. `ofrecerUbicacion()` es para el otro momento, `laAppDecide`:
+ofrecerla cuando sirve para algo —al abrir el mapa de sucursales— que es cuando más gente
+acepta.
+
+**Módulos y diagnóstico**
+
+```dart
+AkPush.modulos                  // qué activó el comercio
+await AkPush.diagnostico();     // el informe completo, para pegar en un ticket
+```
 
 ---
 
