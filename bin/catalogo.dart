@@ -36,6 +36,19 @@ String _estado(Estado e) => switch (e) {
       Estado.prohibido => 'prohibido',
     };
 
+/// FINALIDAD — para qué SISTEMA sirve el dato. Se deriva de la primera palabra del «para qué
+/// sirve», que ya lo dice, así no hay una segunda lista que se separe. Tres destinos:
+/// «Envío» (el motor de notificaciones), «Puntaje» (scoring/antifraude) y «Contexto» (ambos).
+String _finalidad(String? paraQue) {
+  if (paraQue == null || paraQue.isEmpty) return 'Contexto';
+  final t = paraQue.split(':').first.split(RegExp(r'[ ,]')).first;
+  const envio = {'Entregabilidad', 'Alcance', 'Señal', 'Actividad'};
+  const puntaje = {'Antifraude', 'Puntaje', 'Coherencia', 'Autenticidad', 'Antigüedad', 'Riesgo'};
+  if (envio.contains(t)) return 'Envío';
+  if (puntaje.contains(t)) return 'Puntaje';
+  return 'Contexto';
+}
+
 void main() {
   final salida = {
     'generado': DateTime.now().toUtc().toIso8601String(),
@@ -93,6 +106,7 @@ void main() {
               'queManda': c.queManda,
               if (c.paraQue != null) 'paraQue': c.paraQue,
               'computada': c.computada || c.como != Transformacion.taICual,
+              'finalidad': _finalidad(c.paraQue),
               'como': c.como.name,
               if (c.como == Transformacion.tramo) 'tramoDe': c.tramoDe,
               if (grupoDe(c.nombre) != null) 'grupo': grupoDe(c.nombre)!.prefijo,
